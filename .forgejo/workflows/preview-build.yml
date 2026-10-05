@@ -176,7 +176,7 @@ jobs:
             docker push $IMAGE_LOCAL:$TAG
           done
 
-      # NGINX ANALYZER GO
+      # NGINX ANALYZER GO - WAF EMULE
       - name: Nginx Analyzer GO - Build and Push
         run: |
           # Local Registry 
@@ -319,3 +319,6 @@ jobs:
             fi
             docker push $IMAGE_LOCAL:$TAG
           done
+
+
+      
