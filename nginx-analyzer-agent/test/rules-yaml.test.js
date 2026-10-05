@@ -148,5 +148,131 @@ check('liste vide -> "rules: []"', () => {
   assert.strictEqual(stringifyRules([]), 'rules: []\n');
 });
 
+console.log('\n"Blocklist a la CrowdSec" par regle personnalisee (v12.50.0)');
+check('champs absents -> blocklistThreshold: null (desactive), fenetre 1440 min, remediation false', () => {
+  const { valid } = parseAndValidate('rules:\n  - id: 100\n    name: x\n    min_matches: 5');
+  assert.deepStrictEqual(
+    { threshold: valid[0].blocklistThreshold, window: valid[0].blocklistWindowMinutes, remediation: valid[0].blocklistRemediation, remediationMinutes: valid[0].blocklistRemediationMinutes },
+    { threshold: null, window: 1440, remediation: false, remediationMinutes: null }
+  );
+});
+check('champs fournis sont repris tels quels', () => {
+  const { valid } = parseAndValidate([
+    'rules:', '  - id: 100', '    name: x', '    min_matches: 5',
+    '    blocklist_threshold: 3', '    blocklist_window_minutes: 120',
+    '    blocklist_remediation: true', '    blocklist_remediation_minutes: 60',
+  ].join('\n'));
+  assert.strictEqual(valid[0].blocklistThreshold, 3);
+  assert.strictEqual(valid[0].blocklistWindowMinutes, 120);
+  assert.strictEqual(valid[0].blocklistRemediation, true);
+  assert.strictEqual(valid[0].blocklistRemediationMinutes, 60);
+});
+check('blocklist_threshold < 1 ou non numerique -> erreur explicite', () => {
+  const { errors } = parseAndValidate('rules:\n  - id: 100\n    name: x\n    min_matches: 5\n    blocklist_threshold: 0');
+  assert.ok(errors.some(e => e.includes('blocklist_threshold')));
+});
+check('blocklist_window_minutes est borne (MAX_BLOCKLIST_WINDOW_MINUTES)', () => {
+  const { MAX_BLOCKLIST_WINDOW_MINUTES } = require('../lib/rules-yaml');
+  const { valid } = parseAndValidate(`rules:\n  - id: 100\n    name: x\n    min_matches: 5\n    blocklist_window_minutes: ${MAX_BLOCKLIST_WINDOW_MINUTES * 10}`);
+  assert.strictEqual(valid[0].blocklistWindowMinutes, MAX_BLOCKLIST_WINDOW_MINUTES);
+});
+check('blocklist_remediation_minutes est borne (MAX_BLOCKLIST_REMEDIATION_MINUTES)', () => {
+  const { MAX_BLOCKLIST_REMEDIATION_MINUTES } = require('../lib/rules-yaml');
+  const { valid } = parseAndValidate(`rules:\n  - id: 100\n    name: x\n    min_matches: 5\n    blocklist_remediation_minutes: ${MAX_BLOCKLIST_REMEDIATION_MINUTES * 10}`);
+  assert.strictEqual(valid[0].blocklistRemediationMinutes, MAX_BLOCKLIST_REMEDIATION_MINUTES);
+});
+check('blocklist_remediation: absent ou false -> false ; seul "true" litteral l active', () => {
+  const a = parseAndValidate('rules:\n  - id: 100\n    name: a\n    min_matches: 5').valid[0];
+  const b = parseAndValidate('rules:\n  - id: 101\n    name: b\n    min_matches: 5\n    blocklist_remediation: false').valid[0];
+  const c = parseAndValidate('rules:\n  - id: 102\n    name: c\n    min_matches: 5\n    blocklist_remediation: true').valid[0];
+  assert.strictEqual(a.blocklistRemediation, false);
+  assert.strictEqual(b.blocklistRemediation, false);
+  assert.strictEqual(c.blocklistRemediation, true);
+});
+check('stringifyRules() aller-retour conserve les champs blocklist_*', () => {
+  const original = [{
+    id: 105, name: 'y', min_matches: 4,
+    blocklist_threshold: 7, blocklist_window_minutes: 30, blocklist_remediation: true, blocklist_remediation_minutes: 15,
+  }];
+  const text = stringifyRules(original);
+  const { valid, errors } = parseAndValidate(text);
+  assert.strictEqual(errors.length, 0);
+  assert.strictEqual(valid[0].blocklistThreshold, 7);
+  assert.strictEqual(valid[0].blocklistWindowMinutes, 30);
+  assert.strictEqual(valid[0].blocklistRemediation, true);
+  assert.strictEqual(valid[0].blocklistRemediationMinutes, 15);
+});
+
+console.log('\nscope: global / min_ips (v12.60.0)');
+check('scope global : defauts (min_ips 5), scope ip par defaut, aller-retour stringify', () => {
+  const y = `rules:
+  - id: 120
+    name: botnet
+    min_matches: 20
+    scope: global
+    path_hint: "x"
+  - id: 121
+    name: normal
+    min_matches: 3
+`;
+  const { valid, errors } = parseAndValidate(y);
+  assert.deepStrictEqual(errors, []);
+  assert.strictEqual(valid[0].scope, 'global'); assert.strictEqual(valid[0].minIps, 5);
+  assert.strictEqual(valid[1].scope, 'ip'); assert.strictEqual(valid[1].minIps, null);
+  const out = stringifyRules(valid);
+  assert.ok(/scope: global\n    min_ips: 5/.test(out));
+  assert.strictEqual((out.match(/scope:/g) || []).length, 1);
+  const again = parseAndValidate(out);
+  assert.deepStrictEqual(again.errors, []);
+  assert.strictEqual(again.valid[0].scope, 'global');
+});
+check('scope invalide et min_ips invalide refuses', () => {
+  const { errors } = parseAndValidate(`rules:
+  - id: 120
+    name: a
+    min_matches: 1
+    scope: monde
+  - id: 121
+    name: b
+    min_matches: 1
+    scope: global
+    min_ips: 0
+`);
+  assert.ok(errors.some(e => /"scope"/.test(e)));
+  assert.ok(errors.some(e => /"min_ips"/.test(e)));
+});
+
+check('un booleen n est pas une duree : blocklist_remediation_minutes: true refuse', () => {
+  const { errors, valid } = parseAndValidate(`rules:
+  - id: 120
+    name: a
+    min_matches: 1
+    blocklist_threshold: 1
+    blocklist_remediation: true
+    blocklist_remediation_minutes: true
+`);
+  assert.ok(errors.some(e => /blocklist_remediation_minutes/.test(e)));
+  assert.strictEqual(valid.length, 0);
+});
+
+check('blocklist_remediation_type : block par defaut, challenge accepte, valeur inconnue refusee, aller-retour YAML', () => {
+  const base = `rules:
+  - id: 120
+    name: a
+    min_matches: 1
+    blocklist_threshold: 1
+    blocklist_remediation: true
+`;
+  assert.strictEqual(parseAndValidate(base).valid[0].blocklistRemediationType, 'block');
+  const ch = parseAndValidate(base + '    blocklist_remediation_type: challenge\n');
+  assert.strictEqual(ch.errors.length, 0);
+  assert.strictEqual(ch.valid[0].blocklistRemediationType, 'challenge');
+  const out = stringifyRules(ch.valid);
+  assert.ok(/blocklist_remediation_type: challenge/.test(out));
+  assert.ok(!/blocklist_remediation_type/.test(stringifyRules(parseAndValidate(base).valid)));
+  const bad = parseAndValidate(base + '    blocklist_remediation_type: captcha\n');
+  assert.ok(bad.errors.some(e => /blocklist_remediation_type/.test(e)));
+});
+
 console.log(`\n${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

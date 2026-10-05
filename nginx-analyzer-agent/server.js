@@ -87,6 +87,9 @@ const CONFIG = {
   countryMinRequests: int('COUNTRY_MIN_REQUESTS', 300),
 };
 
+const { parseIgnoreStatus } = require('./lib/ignore-status');
+const IGNORE_STATUS = parseIgnoreStatus(str('DETECT_IGNORE_STATUS'));
+
 const bool = (n, d) => { const v = str(n); return v === '' ? d : v === 'true' || v === '1'; };
 
 const store = new Store(CONFIG.dbPath);
@@ -271,15 +274,20 @@ const tailer = new Tailer({
   store,
   pollMs: CONFIG.pollMs,
   onEntry(entry) {
-    detector.add(entry);
-    trackStructure(entry);
+    // Statut ignore (ex. 444 : deja bloque par un autre mecanisme) : ni regles ni baseline,
+    // mais le trafic reste enregistre plus bas (statistiques, hits de blocklist).
+    const ignoredStatus = IGNORE_STATUS.has(entry.status);
+    if (!ignoredStatus) {
+      detector.add(entry);
+      trackStructure(entry);
+    }
     const country = geoip.countryOf(entry.ip);
     // No resolvable country (GeoIP absent, private/unroutable address, lookup
     // miss) means there is nothing to attribute this request to for a
     // per-country baseline — same reasoning as the live map below skipping
     // recentGeoEvents in that case, rather than inventing a "??" bucket
     // that would just accumulate everything GeoIP cannot place.
-    if (country) trackCountryStructure(entry, country);
+    if (country && !ignoredStatus) trackCountryStructure(entry, country);
     store.record(entry, country);
 
     // Bot/human classification is independent of GeoIP — a deployment with
@@ -714,6 +722,34 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, key, enabled: enable });
     }
 
+    /**
+     * "Blocklist a la CrowdSec" (v12.50.0) : config threshold/window/
+     * remediation/remediation_minutes de CHAQUE regle integree ayant opte
+     * (threshold configure) + de chaque regle personnalisee (deja portee par
+     * sa propre entree YAML, voir lib/rules-yaml.js) — voir
+     * RulesManager.listBlocklistRules(). C est tout ce dont
+     * nginx-dashboard/features/blocklists.js a besoin pour calculer les IP
+     * suspectes, sans avoir a distinguer regle integree/personnalisee.
+     */
+    if (p === '/api/rules/blocklist-config' && req.method === 'GET') {
+      return send(res, 200, { rules: rulesManager.listBlocklistRules() });
+    }
+
+    /** Set one builtin rule's blocklist threshold/window/remediation/remediation duration. */
+    if (p === '/api/rules/blocklist' && req.method === 'POST') {
+      const key = url.searchParams.get('key');
+      const body = await readJsonBody(req);
+      const result = rulesManager.setBlocklistConfig(key, {
+        threshold: body?.threshold,
+        windowMinutes: body?.windowMinutes,
+        remediation: body?.remediation === true,
+        remediationMinutes: body?.remediationMinutes,
+        remediationType: body?.remediationType,
+      });
+      if (!result.ok) return send(res, 400, result);
+      return send(res, 200, { ok: true, key, value: result.value });
+    }
+
     /** Raw YAML of the custom rules, for the editor's textarea. */
     if (p === '/api/rules/custom' && req.method === 'GET') {
       return send(res, 200, {
@@ -770,6 +806,18 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/api/baseline/country') {
       return send(res, 200, countryBaseline.stats());
+    }
+
+    // v12.68.0 : ce que la baseline a appris (resume par cle, profil des 168 creneaux).
+    if (p === '/api/baseline/keys') {
+      const b = url.searchParams.get('type') === 'country' ? countryBaseline : baseline;
+      return send(res, 200, { keys: b.keysSummary(100) });
+    }
+    if (p === '/api/baseline/profile') {
+      const b = url.searchParams.get('type') === 'country' ? countryBaseline : baseline;
+      const key = String(url.searchParams.get('key') || '').slice(0, 253);
+      if (!key) return send(res, 400, { error: 'key required' });
+      return send(res, 200, b.profile(key));
     }
 
     // ── ModSecurity / WAF ────────────────────────────────────────────────────

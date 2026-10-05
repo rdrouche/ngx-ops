@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -54,6 +55,18 @@ func envOr(name, def string) string {
 	}
 	return def
 }
+
+// userAgent : User-Agent de toutes les requetes vers le dashboard (enrolement, manifeste,
+// tunnel). Sans version, comme NGX Ops, pour pouvoir le filtrer cote nginx.
+// Surchargeable par HTTP_USER_AGENT ; valeur invalide = defaut.
+var userAgent = func() string {
+	v := strings.TrimSpace(envOr("HTTP_USER_AGENT", "NGXOps"))
+	if regexp.MustCompile(`^[A-Za-z0-9._/-]{1,60}$`).MatchString(v) {
+		return v
+	}
+	return "NGXOps"
+}()
+
 func envOrBool(name string, def bool) bool {
 	v, ok := os.LookupEnv(name)
 	if !ok {
@@ -65,6 +78,7 @@ func envOrBool(name string, def bool) bool {
 	}
 	return b
 }
+
 // normalizeListenAddr tolerates the extremely common footgun of giving a
 // bare port number (RELAY_HTTP_LISTEN=8080) instead of Go's net.Listen
 // syntax (":8080") — every other port-shaped setting in this project
@@ -116,12 +130,12 @@ func main() {
 	// ─── Multi-master (v12.21.0) ─────────────────────────────────────────────
 	// --targets-file remplace --dashboard-url (et les flags associes) par une
 	// LISTE de cibles independantes (voir targets.go et README.md) — un seul
-	// agent peut alors pousser vers plusieurs Nginx Control (typiquement
+	// agent peut alors pousser vers plusieurs NGX Ops (typiquement
 	// DMZ + LAN), chaque conteneur decidant lesquelles recevoir via l etiquette
 	// nginx-control.publish=. Fournir les deux a la fois est une erreur (voir
 	// plus bas) : melanger les deux formes de configuration serait ambigu sur
 	// laquelle gagne.
-	targetsFile := flag.String("targets-file", envOr("TARGETS_FILE", ""), "Fichier JSON listant plusieurs cibles Nginx Control (multi-master) — remplace --dashboard-url/--state-file/--token(-file) (env: TARGETS_FILE)")
+	targetsFile := flag.String("targets-file", envOr("TARGETS_FILE", ""), "Fichier JSON listant plusieurs cibles NGX Ops (multi-master) — remplace --dashboard-url/--state-file/--token(-file) (env: TARGETS_FILE)")
 	dockerSocket := flag.String("docker-socket", envOr("DOCKER_SOCKET", "/var/run/docker.sock"), "Chemin du socket Docker local (env: DOCKER_SOCKET)")
 	pollInterval := flag.Duration("poll-interval", envOrDuration("POLL_INTERVAL", 30*time.Second), "Intervalle entre deux pushs de manifeste (env: POLL_INTERVAL)")
 	insecureSkipVerify := flag.Bool("insecure-skip-verify", envOrBool("INSECURE_SKIP_VERIFY", false), "Ne pas verifier le certificat TLS du dashboard (tests uniquement, jamais en production) (env: INSECURE_SKIP_VERIFY)")
@@ -349,7 +363,10 @@ func runTarget(ctx context.Context, t targetConfig, dockerCli *dockerClient, hos
 	// processus mourait avant. Desormais : un enrolement rate est retente
 	// avec un backoff exponentiel plafonne, uniquement pour CETTE cible ;
 	// les autres cibles de main() continuent sans etre affectees.
-	if st.AgentID == "" {
+	// v12.58.0 : un agent cree depuis le dashboard (kit .env/compose.yml) recoit
+	// son jeton des le premier demarrage et est deja approuve — s enroler
+	// creerait un doublon "en attente" inutile. L enrolement n a lieu que sans jeton.
+	if needsEnrollment(st.AgentID, resolveToken(t.Token, t.TokenFile, st.Token)) {
 		enrollBackoff := time.Second
 		const maxEnrollBackoff = time.Minute
 		for st.AgentID == "" {
@@ -511,6 +528,14 @@ func sleepOrDone(ctx context.Context, d time.Duration) bool {
 	}
 }
 
+// needsEnrollment : un agent s enrole seulement s il n a ni identifiant
+// persiste ni jeton (flag, fichier ou etat). Avec un jeton fourni d avance
+// (agent cree depuis le dashboard), l enrolement est inutile : le jeton
+// identifie deja l agent cote dashboard.
+func needsEnrollment(agentID, token string) bool {
+	return agentID == "" && token == ""
+}
+
 // resolveToken applies the priority order documented in --help: an explicit
 // --token flag wins, then a --token-file re-read every cycle (so an operator
 // can approve, then just drop the token into a file without restarting the
@@ -553,6 +578,7 @@ func enroll(ctx context.Context, client *http.Client, dashboardURL, hostname, fi
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", userAgent)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -608,6 +634,7 @@ func pushManifest(ctx context.Context, client *http.Client, dashboardURL, token,
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := client.Do(req)
 	if err != nil {

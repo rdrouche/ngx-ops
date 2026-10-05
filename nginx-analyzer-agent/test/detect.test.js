@@ -400,5 +400,128 @@ check('opt-out par vhost s applique aussi aux regles personnalisees', ()=>{
   assert.deepStrictEqual(d.evaluate(T0+1000).filter(x=>x.type==='custom_105'),[]);
 });
 
+console.log('\npaths-ignore par regle (# nginx-control-analyze-rule-{ID}-paths-ignore)');
+{
+  const { RULE_IDS } = require('../lib/detect');
+  const pi=(o)=>({ 'site.fr': { enabled: true, ignore: new Set(), pathsIgnore: new Map(Object.entries(o).map(([k,v])=>[Number(k),v])) } });
+  check('bruteforce : les 403 sur un chemin ignore ne comptent plus pour la regle 1', ()=>{
+    const d=new Detector({bruteforce:{pathHint:/verify-session|login/}});
+    d.setVhostRules(pi({[RULE_IDS.bruteforce]:['/wp-json/wpa/v1/verify-session']}));
+    feed(d,30,{path:'/wp-json/wpa/v1/verify-session?t=1',status:403});
+    assert.deepStrictEqual(d.evaluate(T0+3000).filter(a=>a.type==='bruteforce'),[]);
+  });
+  check('sans motif, les memes requetes declenchent bien la regle (controle negatif)', ()=>{
+    const d=new Detector({bruteforce:{pathHint:/verify-session|login/}});
+    feed(d,30,{path:'/wp-json/wpa/v1/verify-session',status:403});
+    assert.strictEqual(d.evaluate(T0+3000).filter(a=>a.type==='bruteforce').length,1);
+  });
+  check('le motif est propre a la regle : le flood continue de compter ces requetes', ()=>{
+    const d=new Detector();
+    d.setVhostRules(pi({[RULE_IDS.bruteforce]:['/ping']}));
+    feed(d,1200,{path:'/ping',status:200},5);
+    assert.strictEqual(d.evaluate(T0+7000).filter(a=>a.type==='flood').length,1);
+  });
+  check('le motif est propre au vhost', ()=>{
+    const d=new Detector({bruteforce:{pathHint:/login/}});
+    d.setVhostRules(pi({[RULE_IDS.bruteforce]:['/login']}));
+    feed(d,30,{path:'/login',status:401,vhost:'autre.fr'});
+    assert.strictEqual(d.evaluate(T0+3000).filter(a=>a.type==='bruteforce').length,1);
+  });
+  check('motif prefixe "*" et exact', ()=>{
+    const d=new Detector();
+    d.setVhostRules(pi({[RULE_IDS.flood]:['/health*']}));
+    feed(d,1500,{path:'/healthz?x=1'},2);
+    assert.deepStrictEqual(d.evaluate(T0+4000).filter(a=>a.type==='flood'),[]);
+    const d2=new Detector();
+    d2.setVhostRules(pi({[RULE_IDS.flood]:['/health']}));
+    feed(d2,1500,{path:'/healthz'},2);
+    assert.strictEqual(d2.evaluate(T0+4000).filter(a=>a.type==='flood').length,1,'exact ne doit pas matcher un prefixe');
+  });
+  check('scan : les 404 + chemins ignores sont retranches (requetes, 404, chemins distincts)', ()=>{
+    const d=new Detector();
+    d.setVhostRules(pi({[RULE_IDS.scan]:['/wp-content/*']}));
+    feed(d,60,i=>({path:'/wp-content/uploads/a'+i+'.jpg',status:404}));
+    assert.deepStrictEqual(d.evaluate(T0+7000).filter(a=>a.type==='scan'),[]);
+    const d2=new Detector();
+    feed(d2,60,i=>({path:'/wp-content/uploads/a'+i+'.jpg',status:404}));
+    assert.strictEqual(d2.evaluate(T0+7000).filter(a=>a.type==='scan').length,1);
+  });
+  check('regle personnalisee : requete ignoree non comptee', ()=>{
+    const d=new Detector();
+    d.setCustomRules([customRule({minMatches:5,id:105})]);
+    d.setVhostRules(pi({105:['/wp-admin/']}));
+    feed(d,10,{path:'/wp-admin/'});
+    assert.deepStrictEqual(d.evaluate(T0+1000).filter(x=>x.type==='custom_105'),[]);
+  });
+  check('sanitizePathsIgnore rejette les motifs dangereux (vide, sans "/", enorme) et borne la liste', ()=>{
+    const { sanitizePathsIgnore } = require('../lib/rules-manager');
+    const m=sanitizePathsIgnore({1:['','*','login','/ok','/ok','/'+'a'.repeat(300)],x:['/z'],2:'nope'});
+    assert.deepStrictEqual([...m.entries()],[[1,['/ok']]]);
+    const big=sanitizePathsIgnore({1:Array.from({length:200},(_,i)=>'/p'+i)});
+    assert.strictEqual(big.get(1).length,50);
+  });
+}
+
+console.log('\nregles personnalisees scope: global (campagne : une alerte, preuves agregees)');
+const botnet=(d,nIps,perIp=1,o={})=>{ for(let i=0;i<nIps;i++) for(let k=0;k<perIp;k++) d.add(req({ip:`198.51.100.${i+1}`,ts:T0+(i*perIp+k)*10,path:'/x/commits/commit/'+'a'.repeat(40)+'/f'+(i%3),status:444,ua:i%2?'Chrome/142':'Firefox/130',...(typeof o==='function'?o(i):o)})); };
+const gRule=(o={})=>customRule({id:130,name:'botnet',scope:'global',minIps:5,minMatches:8,pathHint:/commits\/commit/i,pathHintRaw:'commits/commit',...o});
+const camp=(d,t=T0+5000)=>d.evaluate(t).filter(x=>x.type==='custom_130');
+check('global : 10 IP a 1 requete -> UNE alerte de campagne, preuves agregees', ()=>{
+  const d=new Detector(); d.setCustomRules([gRule()]); botnet(d,10);
+  const a=camp(d);
+  assert.strictEqual(a.length,1);
+  const e=a[0].evidence;
+  assert.strictEqual(e.campaign,true); assert.strictEqual(e.ip,null);
+  assert.strictEqual(e.globalMatches,10); assert.strictEqual(e.globalIps,10);
+  assert.strictEqual(e.ips.length,10); assert.deepStrictEqual(e.ips[0].length,2);
+  assert.strictEqual(e.ipsTruncated,false);
+  assert.strictEqual(e.statuses[444],10);
+  assert.strictEqual(e.topPaths.length,3); assert.strictEqual(e.topPaths[0].count+e.topPaths[1].count+e.topPaths[2].count,10);
+  assert.deepStrictEqual(e.topUserAgents.map(x=>x.count).sort(),[5,5]);
+  assert.strictEqual(e.samples.length,10); assert.ok(e.samples[0].path&&e.samples[0].ua);
+  assert.deepStrictEqual(e.vhosts,['site.fr']); assert.strictEqual(a[0].vhost,'site.fr');
+  assert.ok(/campagne distribuee/.test(a[0].summary)&&/10 IP/.test(a[0].summary));
+});
+check('global : edge-triggered (pas de doublon), mise a jour si le nombre d IP grandit de 50 %', ()=>{
+  const d=new Detector(); d.setCustomRules([gRule()]); botnet(d,10);
+  assert.strictEqual(camp(d).length,1);
+  assert.strictEqual(camp(d,T0+6000).length,0);
+  for(let i=10;i<14;i++) d.add(req({ip:`198.51.100.${i+1}`,ts:T0+6100,path:'/x/commits/commit/'+'b'.repeat(40)}));
+  assert.strictEqual(camp(d,T0+7000).length,0); // 14 < 15
+  d.add(req({ip:'198.51.100.99',ts:T0+7100,path:'/x/commits/commit/'+'c'.repeat(40)}));
+  const u=camp(d,T0+8000); assert.strictEqual(u.length,1); assert.strictEqual(u[0].evidence.renewal,true); assert.strictEqual(u[0].evidence.globalIps,15);
+});
+check('global : refire apres une fenetre complete tant que la campagne dure ; rearme apres fin', ()=>{
+  const d=new Detector({windowMs:600000}); d.setCustomRules([gRule({windowMinutes:1})]); botnet(d,10);
+  assert.strictEqual(camp(d).length,1);
+  for(let i=0;i<10;i++) d.add(req({ip:`198.51.100.${i+1}`,ts:T0+61000,path:'/x/commits/commit/'+'d'.repeat(40)}));
+  assert.strictEqual(camp(d,T0+66000).length,1);
+  assert.strictEqual(camp(d,T0+300000).length,0); // campagne finie
+  botnet(d,10,1,{ts:T0+400000});
+  assert.strictEqual(d.evaluate(T0+400100).filter(x=>x.type==='custom_130').length,1);
+});
+check('global : le meme trafic en scope ip ne declenche rien ; une IP seule non plus (min_ips)', ()=>{
+  const d=new Detector(); d.setCustomRules([gRule({scope:'ip'})]); botnet(d,10);
+  assert.deepStrictEqual(camp(d),[]);
+  const d2=new Detector(); d2.setCustomRules([gRule()]); botnet(d2,1,20);
+  assert.deepStrictEqual(camp(d2),[]);
+  const d3=new Detector(); d3.setCustomRules([gRule({minMatches:50})]); botnet(d3,10);
+  assert.deepStrictEqual(camp(d3),[]);
+});
+check('global : IP hors motif et IP sous exception exclues de la liste', ()=>{
+  const d=new Detector(); d.setCustomRules([gRule()]); botnet(d,10);
+  d.add(req({ip:'10.149.2.1',ts:T0+50,method:'POST',path:'/api/actions/runner.v1.RunnerService/FetchTask'}));
+  d.setExceptions([{vhost:'site.fr',ip:'198.51.100.3'}]);
+  const e=camp(d)[0].evidence;
+  assert.strictEqual(e.globalIps,9);
+  assert.ok(!e.ips.some(x=>x[0]==='10.149.2.1'||x[0]==='198.51.100.3'));
+});
+check('global : liste d IP bornee (3000) et signalee', ()=>{
+  const d=new Detector({maxTrackedIps:10000}); d.setCustomRules([gRule({minMatches:10})]);
+  for(let i=0;i<3100;i++) d.add(req({ip:`10.${i>>8}.${i&255}.7`,ts:T0+i,path:'/x/commits/commit/'+'a'.repeat(40)}));
+  const e=camp(d,T0+5000)[0].evidence;
+  assert.strictEqual(e.ips.length,3000); assert.strictEqual(e.ipsTruncated,true); assert.strictEqual(e.globalIps,3100);
+});
+
 console.log(`\n${pass} pass, ${fail} fail`);
 process.exit(fail?1:0);

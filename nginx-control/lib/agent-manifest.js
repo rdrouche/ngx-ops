@@ -9,7 +9,7 @@
  * lib/docker.js or the filesystem for this feature (composition-root split
  * already used by every other feature in this project).
  *
- * A remote agent is, by construction, further from Nginx Control's trust
+ * A remote agent is, by construction, further from NGX Ops's trust
  * boundary than a Docker label on the SAME host (Partie 1): the manifest
  * arrives over the network, authenticated only by a bearer token the agent
  * holds. Every value here goes through the exact same anchored-regex

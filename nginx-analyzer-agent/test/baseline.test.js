@@ -144,25 +144,23 @@ check('coverage() rapporte au nombre REEL de creneaux possibles (vhosts suivis x
   // Diviser par 168 fixe fait donc largement depasser 100% des qu on suit plus
   // d un vhost — exactement le symptome signale.
   const b = new Baseline({ minSamplesPerBucket: 1 }, { startedAt: OLD });
-  // 3 vhosts, chacun avec un creneau rempli (mardi 14h) : 3 creneaux utilisables
-  // sur un total reel de 3*168 = 504, jamais sur 168.
-  b.observe('a.example.com', tue(0), m(100));
-  b.observe('b.example.com', tue(0), m(100));
-  b.observe('c.example.com', tue(0), m(100));
+  // 3 vhosts suivis (>= 24 heures observees chacun) : 24 creneaux utilisables par
+  // vhost sur un total reel de 3*168 = 504, jamais sur 168.
+  for (const v of ['a.example.com', 'b.example.com', 'c.example.com']) for (let h = 0; h < 24; h++) b.observe(v, tue(0, h), m(100));
   const s = b.stats();
   assert.strictEqual(s.vhostsTracked, 3, 'doit compter les vhosts distincts, pas les creneaux');
-  assert.strictEqual(s.bucketsUsable, 3);
+  assert.strictEqual(s.bucketsUsable, 72);
   assert.strictEqual(s.totalSlots, 3 * 168, 'le total doit suivre le nombre de vhosts suivis');
   assert.ok(s.coverage <= 100, `coverage ne doit jamais depasser 100% (obtenu ${s.coverage}%)`);
-  assert.strictEqual(s.coverage, +(100 * 3 / (3 * 168)).toFixed(1));
+  assert.strictEqual(s.coverage, +(100 * 72 / (3 * 168)).toFixed(1));
 });
 check('un seul vhost retombe sur le comportement historique (total = 168)', ()=>{
   const b = new Baseline({ minSamplesPerBucket: 1 }, { startedAt: OLD });
-  b.observe('site.fr', tue(0), m(100));
+  for (let h = 0; h < 24; h++) b.observe('site.fr', tue(0, h), m(100));
   const s = b.stats();
   assert.strictEqual(s.vhostsTracked, 1);
   assert.strictEqual(s.totalSlots, 168);
-  assert.strictEqual(s.coverage, +(100 / 168).toFixed(1));
+  assert.strictEqual(s.coverage, +(100 * 24 / 168).toFixed(1));
 });
 check('aucun vhost suivi -> pas de division par zero', ()=>{
   const b = new Baseline({}, { startedAt: OLD });
@@ -170,6 +168,44 @@ check('aucun vhost suivi -> pas de division par zero', ()=>{
   assert.strictEqual(s.vhostsTracked, 0);
   assert.strictEqual(s.bucketsUsable, 0);
   assert.strictEqual(s.coverage, 0);
+});
+
+console.log('\nv12.68.0 : cles sporadiques, profil appris');
+check('un Host croise une fois (cle sporadique) ne gonfle plus le denominateur', ()=>{
+  const b = new Baseline({ minSamplesPerBucket: 1 }, { startedAt: OLD });
+  for (let h = 0; h < 24; h++) b.observe('site.fr', tue(0, h), m(100));
+  for (let i = 0; i < 50; i++) b.observe('scan' + i + '.bot', tue(0, 3), m(2));
+  const s = b.stats();
+  assert.strictEqual(s.vhostsTracked, 1);
+  assert.strictEqual(s.keysTracked, 51);
+  assert.strictEqual(s.sporadicKeys, 50);
+  assert.strictEqual(s.totalSlots, 168);
+  assert.strictEqual(s.coverage, +(100 * 24 / 168).toFixed(1));
+});
+check('profile() : 168 creneaux, mediane/seuil pour les creneaux appris, vide sinon', ()=>{
+  const b = new Baseline({ minSamplesPerBucket: 3, sigmaThreshold: 6, minAbsoluteRequests: 100 }, { startedAt: OLD });
+  for (let w = 0; w < 3; w++) b.observe('site.fr', tue(w, 14), m(1000 + w * 10));
+  b.observe('site.fr', tue(0, 15), m(500));
+  const p = b.profile('site.fr');
+  assert.strictEqual(p.slots.length, 168);
+  const tue14 = p.slots[hourOfWeek(tue(0, 14))];
+  assert.strictEqual(tue14.usable, true);
+  assert.strictEqual(tue14.median, 1010);
+  assert.ok(tue14.threshold > tue14.median);
+  const tue15 = p.slots[hourOfWeek(tue(0, 15))];
+  assert.strictEqual(tue15.usable, false);
+  assert.strictEqual(tue15.samples, 1);
+  assert.strictEqual(p.slots[0].samples, 0);
+});
+check('keysSummary() : tri par volume hebdomadaire, creneau de pointe', ()=>{
+  const b = new Baseline({ minSamplesPerBucket: 1 }, { startedAt: OLD });
+  for (let h = 0; h < 24; h++) b.observe('gros.fr', tue(0, h), m(h === 14 ? 900 : 100));
+  for (let h = 0; h < 24; h++) b.observe('petit.fr', tue(0, h), m(10));
+  const k = b.keysSummary();
+  assert.strictEqual(k[0].key, 'gros.fr');
+  assert.strictEqual(k[0].peakPerHour, 900);
+  assert.strictEqual(k[0].peakHow, hourOfWeek(tue(0, 14)));
+  assert.strictEqual(k[0].relevant, true);
 });
 
 console.log(`\n${pass} pass, ${fail} fail`);

@@ -3,7 +3,7 @@
  * Signalement reel : la page WAF affiche le panneau "non configure" (avec
  * l exemple de directives ModSecurity) alors que la page Analyse fonctionne,
  * juste apres etre passe de la gestion manuelle du conteneur analyzer (dans
- * docker-compose.yml) a sa gestion via Nginx Control (start/stop depuis la
+ * docker-compose.yml) a sa gestion via NGX Ops (start/stop depuis la
  * page Analyse).
  *
  * Cause reelle, trouvee dans features/analyzer.js -> startAnalyzer() -> env :
@@ -22,7 +22,7 @@
  * route.
  *
  * L ancienne gestion manuelle du conteneur (docker-compose.yml, avant le
- * passage a Nginx Control) ne passait meme pas WAF_LOG_PATTERN : l analyzer
+ * passage a NGX Ops) ne passait meme pas WAF_LOG_PATTERN : l analyzer
  * retombait sur son PROPRE defaut interne (server.js), correctement
  * echappe — ce qui explique pourquoi le bug n etait apparu qu apres le
  * passage a la gestion via le dashboard.

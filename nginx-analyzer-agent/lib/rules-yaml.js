@@ -23,6 +23,8 @@
  *       description: "Beaucoup de requetes vers des chemins d administration"
  *       window_minutes: 5
  *       min_matches: 10
+ *       scope: ip              # ip (defaut) | global (toutes IP confondues, v12.60.0)
+ *       min_ips: 5             # scope: global — nombre d'IP distinctes minimum (defaut 5)
  *       path_hint: "(wp-admin|phpmyadmin|\\.env)"
  *       ua_hint: null
  *       status_in: [401, 403]
@@ -127,6 +129,35 @@ function parseRulesYaml(text) {
 
 const SEVERITIES = new Set(['low', 'medium', 'high']);
 
+// Retour utilisateur (v12.50.0) : le seuil de repetition + la remediation du
+// mode "Blocklist a la CrowdSec" (v12.49.4) se configurent desormais au
+// niveau de CHAQUE regle (integree ou personnalisee), plutot que sur une
+// source globale — voir nginx-dashboard/features/blocklists.js. Une regle
+// personnalisee peut donc porter, en plus de son propre critere de
+// detection, ces quatre champs optionnels :
+//
+//   blocklist_threshold: 5          # nb de declenchements de CETTE regle,
+//                                    # par IP, avant de la juger suspecte
+//                                    # (absent/null = desactive pour cette
+//                                    # regle : elle ne contribue jamais)
+//   blocklist_window_minutes: 1440  # fenetre glissante de comptage, en
+//                                    # MINUTES (24h par defaut)
+//   blocklist_remediation: false    # applique reellement le blocage —
+//                                    # meme convention "absent = false" que
+//                                    # le reste du mecanisme (securite)
+//   blocklist_remediation_minutes: null  # duree du blocage en minutes une
+//                                    # fois applique (null = pas de duree
+//                                    # propre : reste bloquee tant qu elle
+//                                    # continue de depasser le seuil sur la
+//                                    # fenetre glissante ci-dessus)
+//   blocklist_remediation_type: block   # v12.63.0 : "block" (defaut, refus
+//                                    # 403/444) ou "challenge" (l IP recoit une
+//                                    # page de verification navigateur au lieu
+//                                    # d un refus — voir nginx-challenge)
+const REMEDIATION_TYPES = new Set(['block', 'challenge']);
+const MAX_BLOCKLIST_WINDOW_MINUTES = 14 * 24 * 60;      // 14 jours, meme borne que MAX_CUSTOM_WINDOW_MINUTES (detect.js)
+const MAX_BLOCKLIST_REMEDIATION_MINUTES = 30 * 24 * 60; // 30 jours : evite un blocage de facto permanent par erreur de saisie
+
 /** Validate one already-parsed rule object. Returns a list of error strings (empty = valid). */
 function validateRule(r, seenIds) {
   const errs = [];
@@ -148,6 +179,12 @@ function validateRule(r, seenIds) {
   if (r.window_minutes !== undefined && (!Number.isFinite(r.window_minutes) || r.window_minutes <= 0)) {
     errs.push(`${label} : "window_minutes" doit etre un nombre > 0`);
   }
+  if (r.scope != null && r.scope !== 'ip' && r.scope !== 'global') {
+    errs.push(`${label} : "scope" doit etre ip (defaut, comptage par IP) ou global (toutes IP confondues)`);
+  }
+  if (r.min_ips != null && (!Number.isInteger(r.min_ips) || r.min_ips < 1)) {
+    errs.push(`${label} : "min_ips" doit etre un entier >= 1 (nombre d'IP distinctes, scope: global)`);
+  }
   for (const field of ['path_hint', 'ua_hint']) {
     if (r[field] != null) {
       try { new RegExp(r[field]); }
@@ -158,6 +195,18 @@ function validateRule(r, seenIds) {
     if (r[field] != null && !Array.isArray(r[field])) {
       errs.push(`${label} : "${field}" doit etre une liste, ex: [401, 403]`);
     }
+  }
+  if (r.blocklist_threshold != null && (typeof r.blocklist_threshold === 'boolean' || !Number.isFinite(+r.blocklist_threshold) || +r.blocklist_threshold < 1)) {
+    errs.push(`${label} : "blocklist_threshold" doit etre un entier >= 1 (ou absent pour desactiver)`);
+  }
+  if (r.blocklist_window_minutes != null && (typeof r.blocklist_window_minutes === 'boolean' || !Number.isFinite(+r.blocklist_window_minutes) || +r.blocklist_window_minutes < 1)) {
+    errs.push(`${label} : "blocklist_window_minutes" doit etre un entier >= 1`);
+  }
+  if (r.blocklist_remediation_minutes != null && (typeof r.blocklist_remediation_minutes === 'boolean' || !Number.isFinite(+r.blocklist_remediation_minutes) || +r.blocklist_remediation_minutes < 1)) {
+    errs.push(`${label} : "blocklist_remediation_minutes" doit etre un entier >= 1 (ou absent pour ne pas fixer de duree propre)`);
+  }
+  if (r.blocklist_remediation_type != null && !REMEDIATION_TYPES.has(String(r.blocklist_remediation_type))) {
+    errs.push(`${label} : "blocklist_remediation_type" doit valoir block ou challenge`);
   }
   if (r.id != null && Number.isInteger(r.id)) seenIds.add(r.id);
   return errs;
@@ -185,6 +234,8 @@ function parseAndValidate(text) {
       description: r.description || '',
       windowMinutes: r.window_minutes || 5,
       minMatches: r.min_matches,
+      scope: r.scope === 'global' ? 'global' : 'ip',
+      minIps: r.scope === 'global' ? (r.min_ips || 5) : null,
       pathHint: r.path_hint ? new RegExp(r.path_hint, 'i') : null,
       pathHintRaw: r.path_hint || null,
       uaHint: r.ua_hint ? new RegExp(r.ua_hint, 'i') : null,
@@ -201,6 +252,21 @@ function parseAndValidate(text) {
         ? r.status_in.map(s => (typeof s === 'string' && /^\d+$/.test(s) ? Number(s) : s))
         : [],
       methodIn: Array.isArray(r.method_in) ? r.method_in.map(m => String(m).toUpperCase()) : [],
+      // Blocklist "a la CrowdSec" (v12.50.0), par regle — voir le commentaire
+      // au-dessus de validateRule(). blocklistThreshold null = cette regle ne
+      // participe jamais a la blocklist, quel que soit son nombre de
+      // declenchements (defaut sur : desactive).
+      blocklistThreshold: (r.blocklist_threshold != null && +r.blocklist_threshold >= 1)
+        ? Math.round(+r.blocklist_threshold) : null,
+      blocklistWindowMinutes: Math.min(
+        MAX_BLOCKLIST_WINDOW_MINUTES,
+        (r.blocklist_window_minutes != null && +r.blocklist_window_minutes >= 1)
+          ? Math.round(+r.blocklist_window_minutes) : 1440
+      ),
+      blocklistRemediation: r.blocklist_remediation === true,
+      blocklistRemediationType: r.blocklist_remediation_type === 'challenge' ? 'challenge' : 'block',
+      blocklistRemediationMinutes: (r.blocklist_remediation_minutes != null && +r.blocklist_remediation_minutes >= 1)
+        ? Math.min(MAX_BLOCKLIST_REMEDIATION_MINUTES, Math.round(+r.blocklist_remediation_minutes)) : null,
     });
   }
   return { rules, errors, valid };
@@ -224,6 +290,11 @@ function stringifyRules(rules) {
     const uaHint = get('ua_hint', 'uaHintRaw');
     const statusIn = get('status_in', 'statusIn') || [];
     const methodIn = get('method_in', 'methodIn') || [];
+    const blocklistThreshold = get('blocklist_threshold', 'blocklistThreshold');
+    const blocklistWindowMinutes = get('blocklist_window_minutes', 'blocklistWindowMinutes');
+    const blocklistRemediation = get('blocklist_remediation', 'blocklistRemediation');
+    const blocklistRemediationMinutes = get('blocklist_remediation_minutes', 'blocklistRemediationMinutes');
+    const blocklistRemediationType = get('blocklist_remediation_type', 'blocklistRemediationType');
     lines.push(`  - id: ${id}`);
     lines.push(`    name: ${name}`);
     lines.push(`    enable: ${enable !== false}`);
@@ -231,12 +302,26 @@ function stringifyRules(rules) {
     lines.push(`    description: "${String(description || '').replace(/"/g, '\\"')}"`);
     lines.push(`    window_minutes: ${windowMinutes || 5}`);
     lines.push(`    min_matches: ${minMatches}`);
+    if (get('scope') === 'global') {
+      lines.push('    scope: global');
+      lines.push(`    min_ips: ${get('min_ips', 'minIps') || 5}`);
+    }
     lines.push(`    path_hint: ${pathHint ? `"${pathHint}"` : 'null'}`);
     lines.push(`    ua_hint: ${uaHint ? `"${uaHint}"` : 'null'}`);
     lines.push(`    status_in: [${statusIn.join(', ')}]`);
     lines.push(`    method_in: [${methodIn.join(', ')}]`);
+    // Blocklist "a la CrowdSec" par regle (v12.50.0) — absent/null = cette
+    // regle ne contribue jamais a la blocklist automatique.
+    lines.push(`    blocklist_threshold: ${blocklistThreshold != null ? blocklistThreshold : 'null'}`);
+    lines.push(`    blocklist_window_minutes: ${blocklistWindowMinutes || 1440}`);
+    lines.push(`    blocklist_remediation: ${blocklistRemediation === true}`);
+    lines.push(`    blocklist_remediation_minutes: ${blocklistRemediationMinutes != null ? blocklistRemediationMinutes : 'null'}`);
+    if (blocklistRemediationType === 'challenge') lines.push('    blocklist_remediation_type: challenge');
   }
   return lines.join('\n') + '\n';
 }
 
-module.exports = { parseRulesYaml, validateRule, parseAndValidate, stringifyRules };
+module.exports = {
+  parseRulesYaml, validateRule, parseAndValidate, stringifyRules,
+  MAX_BLOCKLIST_WINDOW_MINUTES, MAX_BLOCKLIST_REMEDIATION_MINUTES, REMEDIATION_TYPES,
+};

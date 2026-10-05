@@ -26,6 +26,9 @@
 
 const MAD_TO_SIGMA = 1.4826;
 const HOURS_PER_WEEK = 168;
+// Une cle (vhost, pays) n est « suivie » pour la couverture qu a partir de 24 heures
+// observees : sinon un Host aleatoire ou un pays croise une fois gonfle le denominateur.
+const RELEVANT_MIN_SAMPLES = 24;
 
 const DEFAULTS = {
   minSamplesPerBucket: 3,     // below this, the bucket says nothing
@@ -207,25 +210,81 @@ class Baseline {
    * sens que pour un seul vhost.
    */
   stats() {
-    let filled = 0;
-    const vhosts = new Set();
+    let filled = 0, filledRelevant = 0;
+    const perKey = new Map(); // cle -> { samples, usable }
     for (const [key, arr] of this.buckets) {
-      vhosts.add(key.slice(0, key.lastIndexOf('|')));
-      if (arr.length >= this.cfg.minSamplesPerBucket) filled++;
+      const k = key.slice(0, key.lastIndexOf('|'));
+      const e = perKey.get(k) || { samples: 0, usable: 0 };
+      e.samples += arr.length;
+      if (arr.length >= this.cfg.minSamplesPerBucket) { e.usable++; filled++; }
+      perKey.set(k, e);
     }
-    const vhostsTracked = vhosts.size;
-    const totalSlots = Math.max(1, vhostsTracked) * HOURS_PER_WEEK;
+    let relevant = 0;
+    for (const e of perKey.values()) {
+      if (e.samples >= RELEVANT_MIN_SAMPLES) { relevant++; filledRelevant += e.usable; }
+    }
+    // v12.68.0 : le denominateur ne compte que les cles reellement suivies
+    // (>= 24 heures observees). Avant, chaque Host ou pays croise une seule fois
+    // ajoutait 168 creneaux « a apprendre », d ou des taux de 0,1 %.
+    const totalSlots = Math.max(1, relevant) * HOURS_PER_WEEK;
     return {
       learning: this.isLearning(),
       daysElapsed: +this.learningDaysElapsed().toFixed(1),
       daysRequired: this.cfg.learningDays,
+      startedAt: new Date(this.startedAt).toISOString(),
       bucketsTracked: this.buckets.size,
-      bucketsUsable: filled,
-      vhostsTracked,
+      bucketsUsable: filledRelevant,
+      bucketsUsableAll: filled,
+      vhostsTracked: relevant,
+      keysTracked: perKey.size,
+      sporadicKeys: perKey.size - relevant,
       totalSlots,
-      coverage: +(100 * filled / totalSlots).toFixed(1),
+      coverage: +(100 * filledRelevant / totalSlots).toFixed(1),
     };
+  }
+
+  /**
+   * Ce qui est appris pour une cle : 168 creneaux (lundi 0h = 0) avec la mediane
+   * observee, l ecart (MAD) et le seuil au-dela duquel une alerte serait emise.
+   */
+  profile(key) {
+    const slots = [];
+    for (let how = 0; how < HOURS_PER_WEEK; how++) {
+      const arr = this.buckets.get(this._key(key, how));
+      if (!arr || arr.length === 0) { slots.push({ how, samples: 0, usable: false }); continue; }
+      const sorted = [...arr].sort((a, b) => a - b);
+      const med = median(sorted);
+      const spread = mad(arr, med) > 0 ? mad(arr, med) : Math.max(1, med * 0.1);
+      slots.push({
+        how, samples: arr.length, usable: arr.length >= this.cfg.minSamplesPerBucket,
+        median: Math.round(med), spread: +spread.toFixed(1),
+        threshold: Math.round(Math.max(med + this.cfg.sigmaThreshold * spread, this.cfg.minAbsoluteRequests)),
+      });
+    }
+    return { key, slots, sigma: this.cfg.sigmaThreshold, minAbsoluteRequests: this.cfg.minAbsoluteRequests,
+      minSamples: this.cfg.minSamplesPerBucket };
+  }
+
+  /** Resume par cle, les plus volumineuses d abord : de quoi voir ce qui est appris sans ouvrir chaque profil. */
+  keysSummary(limit = 100) {
+    const per = new Map();
+    for (const [bk, arr] of this.buckets) {
+      const k = bk.slice(0, bk.lastIndexOf('|'));
+      const how = +bk.slice(bk.lastIndexOf('|') + 1);
+      const sorted = [...arr].sort((a, b) => a - b);
+      const med = median(sorted);
+      const e = per.get(k) || { key: k, samples: 0, usableSlots: 0, weekly: 0, peak: 0, peakHow: 0 };
+      e.samples += arr.length;
+      if (arr.length >= this.cfg.minSamplesPerBucket) e.usableSlots++;
+      e.weekly += med;
+      if (med > e.peak) { e.peak = med; e.peakHow = how; }
+      per.set(k, e);
+    }
+    return [...per.values()]
+      .map(e => ({ key: e.key, samples: e.samples, usableSlots: e.usableSlots, relevant: e.samples >= RELEVANT_MIN_SAMPLES,
+        weeklyEstimate: Math.round(e.weekly), peakPerHour: Math.round(e.peak), peakHow: e.peakHow }))
+      .sort((a, b) => b.weeklyEstimate - a.weeklyEstimate).slice(0, limit);
   }
 }
 
-module.exports = { Baseline, DEFAULTS, hourOfWeek, median, mad, MAD_TO_SIGMA };
+module.exports = { RELEVANT_MIN_SAMPLES, Baseline, DEFAULTS, hourOfWeek, median, mad, MAD_TO_SIGMA };

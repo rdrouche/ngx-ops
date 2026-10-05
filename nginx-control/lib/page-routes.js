@@ -20,6 +20,8 @@
 const PAGE_SLUG_OVERRIDES = {
   geomap: 'map',
   logs: 'live-logs',
+  // `waf` est deja la page « WAF » (evenements ModSecurity) : le WAF emule a la sienne.
+  wafemu: 'waf-emu',
 };
 
 // Liste exhaustive des `data-page` valides de public/index.html — tenue à
@@ -31,10 +33,10 @@ const PAGES = [
   'overview', 'zones', 'upstreams', 'configs', 'ssl', 'logviewer', 'sync',
   'vhostgen', 'diagnostic', 'monitoring', 'graph', 'deploy', 'backups',
   'control', 'cache', 'logs', 'notif-history', 'crowdsec', 'blocklists',
-  'analyzer', 'waf', 'geomap', 'digest', 'goaccess', 'api', 'webhooks',
+  'analyzer', 'wafemu', 'waf', 'geomap', 'digest', 'goaccess', 'api', 'webhooks',
   'godns', 'certbot', 'docker-autoconfig', 'agents', 'geoipupdate',
-  'error-pages', 'notify', 'scheduler', 'config-editor', 'system-info',
-  'admin',
+  'error-pages', 'challenge', 'notify', 'scheduler', 'config-editor', 'system-info',
+  'admin', 'containers',
 ];
 
 const PAGE_TO_SLUG = {};

@@ -415,6 +415,32 @@ const wait=ms=>new Promise(r=>setTimeout(r,ms));
     assert.strictEqual(rulesWithCustom.custom[0].name,'admin_probe');
   });
 
+  console.log('\n"Blocklist a la CrowdSec" par regle (v12.50.0)');
+  const blConfigEmpty=await get('/api/rules/blocklist-config');
+  check('aucune regle opt-in par defaut -> liste vide', ()=>assert.deepStrictEqual(blConfigEmpty.rules,[]));
+  const setBl=await postJsonTo('/api/rules/blocklist?key=flood',{threshold:5,windowMinutes:60,remediation:true,remediationMinutes:30});
+  check('POST /api/rules/blocklist configure une regle integree', ()=>{
+    assert.strictEqual(setBl.status,200);
+    assert.deepStrictEqual(setBl.body.value,{threshold:5,windowMinutes:60,remediation:true,remediationMinutes:30,remediationType:'block'});
+  });
+  const blConfigAfter=await get('/api/rules/blocklist-config');
+  check('la regle integree configuree apparait dans /api/rules/blocklist-config', ()=>{
+    const flood=blConfigAfter.rules.find(r=>r.key==='flood');
+    assert.ok(flood,'flood absent de blocklist-config');
+    assert.strictEqual(flood.threshold,5);
+    assert.strictEqual(flood.remediation,true);
+  });
+  const rulesAfterBl=await get('/api/rules');
+  check('/api/rules expose aussi le bloc blocklist par regle', ()=>{
+    const flood=rulesAfterBl.builtins.find(b=>b.key==='flood');
+    assert.strictEqual(flood.blocklist.threshold,5);
+  });
+  const badBl=await postJsonTo('/api/rules/blocklist?key=flood',{threshold:0});
+  check('threshold invalide rejete sans rien changer', ()=>assert.strictEqual(badBl.status,400));
+  const unknownBl=await postJsonTo('/api/rules/blocklist?key=inconnue',{threshold:5});
+  check('cle inconnue rejetee', ()=>assert.strictEqual(unknownBl.status,400));
+  await postJsonTo('/api/rules/blocklist?key=flood',{threshold:null,remediation:false}); // remis en etat pour la suite
+
   const beforeCustom=(await get('/api/alerts')).total;
   let probeAttack=''; for(let i=0;i<10;i++) probeAttack+=line({ip:'198.51.100.201',p:'/wp-admin/setup.php'});
   fs.appendFileSync(LOG,probeAttack);

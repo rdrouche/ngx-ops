@@ -34,6 +34,13 @@ const cidr = require('./cidr');
 // 24h is already generous for a per-IP sliding-window rule.
 const MAX_CUSTOM_WINDOW_MINUTES = 24 * 60;
 /** Clamp a custom rule's configured window to a sane, bounded range. */
+// Tri deterministe (compte decroissant, puis cle croissante) : memes resultats que le moteur Go.
+const cmpCount = (a, b) => b[1] - a[1] || (String(a[0]) < String(b[0]) ? -1 : String(a[0]) > String(b[0]) ? 1 : 0);
+const bestKey = m => { const e = [...m.entries()].sort(cmpCount)[0]; return e ? e[0] : null; };
+
+// Plafond d adresses listees dans une alerte de campagne (evidence.ips) : le blocage les lit.
+const MAX_CAMPAIGN_IPS = 3000;
+
 function clampCustomWindowMinutes(r) {
   return Math.max(1, Math.min(r.windowMinutes || 5, MAX_CUSTOM_WINDOW_MINUTES));
 }
@@ -139,6 +146,18 @@ const EXPLANATIONS = {
   },
 };
 
+/** Vrai si `path` correspond a l un des motifs (exact, ou prefixe si le motif finit par "*"). */
+function pathIgnored(patterns, path) {
+  if (!patterns || path == null) return false;
+  // Les chemins du detecteur gardent leur query string ; le motif vise la partie stable.
+  const q = path.indexOf('?');
+  if (q !== -1) path = path.slice(0, q);
+  for (const pat of patterns) {
+    if (pat.endsWith('*') ? path.startsWith(pat.slice(0, -1)) : path === pat) return true;
+  }
+  return false;
+}
+
 class Detector {
   constructor(cfg = {}) {
     this.cfg = withDefaults(cfg);
@@ -169,12 +188,15 @@ class Detector {
     // per-bucket match counter (see add()) so several custom rules can watch
     // different traffic shapes on the same window without interfering.
     this.customRules = [];
+    // Campagnes (regles scope: global) en cours : ruleId -> { emittedAt, ips }.
+    this.campaigns = new Map();
     // Per-vhost opt-out, computed by the dashboard from the vhost files'
     // own comments (# nginx-control-analyze: off /
     // # nginx-control-analyze-ignore-rules: 1, 2, 4) and pushed here — see
     // setVhostRules(). Keyed by lowercased vhost name.
     //   Map<string, { enabled: boolean, ignore: Set<number> }>
     this.vhostRules = new Map();
+    this.hasPathsIgnore = false;
   }
 
   setExceptions(list) { this.exceptions = Array.isArray(list) ? list : []; }
@@ -243,6 +265,11 @@ class Detector {
 
   setVhostRules(map) {
     this.vhostRules = map instanceof Map ? map : new Map(Object.entries(map || {}));
+    // Evite un toLowerCase()+lookup par requete tant qu aucun vhost n a de motif.
+    this.hasPathsIgnore = false;
+    for (const cfg of this.vhostRules.values()) {
+      if (cfg && cfg.pathsIgnore && cfg.pathsIgnore.size) { this.hasPathsIgnore = true; break; }
+    }
   }
 
   /** { enabled, ignore } for a vhost, or null when nothing was configured for it (default: fully active). */
@@ -309,6 +336,102 @@ class Detector {
     return b;
   }
 
+  /**
+   * Details kept ONLY for « scope: global » rules (v12.62.0): what the operator
+   * needs to judge a distributed campaign (which paths, which user agents,
+   * which status codes, from which addresses). Bounded per bucket and per rule
+   * (a handful of distinct values), so one request per address costs almost
+   * nothing and a flood cannot grow it.
+   */
+  _recordCampaignDetail(b, ruleId, entry, now) {
+    if (!b.gm) b.gm = new Map();
+    let d = b.gm.get(ruleId);
+    if (!d) { d = { paths: new Map(), uas: new Map(), statuses: new Map(), vhosts: new Set(), last: 0 }; b.gm.set(ruleId, d); }
+    d.last = Math.max(d.last, now);
+    const bump = (m, k, cap) => { if (k == null || k === '') return; if (m.has(k) || m.size < cap) m.set(k, (m.get(k) || 0) + 1); };
+    bump(d.paths, entry.path, 5);
+    bump(d.uas, entry.ua, 3);
+    d.statuses.set(entry.status, (d.statuses.get(entry.status) || 0) + 1);
+    if (entry.vhost) d.vhosts.add(entry.vhost);
+  }
+
+  /**
+   * Aggregates a global rule over the window: every eligible address (exceptions
+   * and per-vhost opt-outs applied) with its own count, plus the campaign-level
+   * tables. Returns null when nothing matched.
+   */
+  _campaignScan(rule, now) {
+    const windowMs = clampCustomWindowMinutes(rule) * 60_000;
+    const cutoffIdx = this._bucketIdx(now - windowMs);
+    const ips = [];
+    const paths = new Map(); const uas = new Map(); const statuses = new Map(); const vhosts = new Set();
+    let total = 0; let first = Infinity; let last = 0;
+    const add = (m, k, n) => m.set(k, (m.get(k) || 0) + n);
+    for (const [ip, st] of this.ips) {
+      let count = 0; let ipLast = 0; let sample = null;
+      const ipVhosts = new Set();
+      const ipPaths = new Map(); const ipUas = new Map(); const ipStatuses = new Map();
+      for (const [idx, b] of st.buckets) {
+        if (idx < cutoffIdx) continue;
+        const n = b.custom.get(rule.id) || 0;
+        if (!n) continue;
+        count += n;
+        const d = b.gm && b.gm.get(rule.id);
+        if (!d) continue;
+        ipLast = Math.max(ipLast, d.last);
+        if (d.last && d.last < first) first = d.last;
+        for (const v of d.vhosts) ipVhosts.add(v);
+        for (const [k, c] of d.paths) add(ipPaths, k, c);
+        for (const [k, c] of d.uas) add(ipUas, k, c);
+        for (const [k, c] of d.statuses) add(ipStatuses, k, c);
+      }
+      if (!count) continue;
+      if (this.isExcludedForVhosts(ip, ipVhosts) || this._ruleSuppressedForVhosts(ipVhosts, rule.id)) continue;
+      total += count;
+      if (ipLast > last) last = ipLast;
+      for (const v of ipVhosts) vhosts.add(v);
+      for (const [k, c] of ipPaths) add(paths, k, c);
+      for (const [k, c] of ipUas) add(uas, k, c);
+      for (const [k, c] of ipStatuses) add(statuses, k, c);
+      sample = { ip, path: bestKey(ipPaths), ua: bestKey(ipUas), status: bestKey(ipStatuses), ts: ipLast };
+      ips.push({ ip, count, last: ipLast, sample });
+    }
+    if (!ips.length) return null;
+    ips.sort((a, b) => b.count - a.count || b.last - a.last || (a.ip < b.ip ? -1 : a.ip > b.ip ? 1 : 0));
+    return { windowMs, ips, total, paths, uas, statuses, vhosts, first: Number.isFinite(first) ? first : last, last };
+  }
+
+  /** Builds the single campaign alert for a global rule (evidence an operator can decide on). */
+  _campaignAlert(rule, scan, windowMinutes, renewal) {
+    const top = (m, n, key) => [...m.entries()].sort(cmpCount).slice(0, n).map(([k, c]) => ({ [key]: String(k).slice(0, 300), count: c }));
+    const ipsOut = scan.ips.slice(0, MAX_CAMPAIGN_IPS).map(x => [x.ip, x.count]);
+    const spanMin = Math.max(1, (scan.last - scan.first) / 60_000);
+    const vhosts = [...scan.vhosts].sort();
+    const vhost = vhosts.length === 1 ? vhosts[0] : null;
+    const topPath = top(scan.paths, 1, 'path')[0];
+    return {
+      type: `custom_${rule.id}`, severity: rule.severity || 'medium', vhost,
+      explanation: {
+        what: rule.description || `Regle personnalisee "${rule.name}"`,
+        why: 'Campagne repartie sur de nombreuses adresses : chacune reste sous les seuils par IP, c est leur total qui est anormal.',
+        legit: 'Un pic de trafic reel (lien partage, evenement) peut produire un motif proche : verifiez les chemins, les user-agents et la repartition des IP ci-dessous.',
+        action: 'Controler les preuves (chemins, user-agents, codes) ; si la campagne est confirmee, activer le blocage de la regle (blocklist) ou proteger la ressource (authentification, limite de debit).',
+        id: rule.id,
+      },
+      summary: `Regle "${rule.name}" (campagne distribuee) : ${scan.total} correspondance(s) depuis ${scan.ips.length} IP sur les dernieres ${windowMinutes} min${vhost ? ' sur ' + vhost : ''}${topPath ? ' — ex. ' + topPath.path.slice(0, 120) : ''}${renewal ? ' (mise a jour)' : ''}`,
+      evidence: {
+        campaign: true, ip: null, vhost, vhosts, ruleId: rule.id, ruleName: rule.name,
+        matches: scan.total, globalMatches: scan.total, globalIps: scan.ips.length,
+        windowMinutes, firstSeen: scan.first, lastSeen: scan.last,
+        requestsPerMinute: Math.round((scan.total / spanMin) * 10) / 10,
+        topPaths: top(scan.paths, 10, 'path'), topUserAgents: top(scan.uas, 5, 'ua'),
+        statuses: Object.fromEntries([...scan.statuses.entries()].sort(cmpCount)),
+        samples: scan.ips.slice(0, 10).map(x => ({ ip: x.ip, path: x.sample.path, status: x.sample.status, ua: x.sample.ua, ts: x.sample.ts })),
+        ips: ipsOut, ipsTruncated: scan.ips.length > ipsOut.length, renewal: !!renewal,
+      },
+    };
+  }
+
   /** Record one parsed request. */
   add(entry) {
     const now = entry.ts || Date.now();
@@ -336,16 +459,42 @@ class Detector {
     const bf = this.cfg.bruteforce;
     if (entry.path != null && bf.statuses.includes(entry.status) && bf.pathHint.test(entry.path)) b.authFail++;
 
+    // # nginx-control-analyze-rule-{ID}-paths-ignore (v12.54.0) : requetes de
+    // ce vhost+chemin a ne pas compter pour la regle {ID}. Les compteurs
+    // partages ci-dessus restent intacts (les AUTRES regles continuent de voir
+    // la requete) ; on memorise a part ce qu il faudra retrancher pour la regle
+    // concernee, voir _effective(). `ignored` ne sert que pour les regles
+    // personnalisees, ou le filtrage se fait directement a l ecriture.
+    let ignored = null;
+    if (this.hasPathsIgnore && entry.vhost && entry.path != null) {
+      const vcfg = this.vhostRules.get(entry.vhost.toLowerCase());
+      if (vcfg && vcfg.pathsIgnore && vcfg.pathsIgnore.size) {
+        for (const [ruleId, pats] of vcfg.pathsIgnore) {
+          if (!pathIgnored(pats, entry.path)) continue;
+          (ignored || (ignored = new Set())).add(ruleId);
+          if (!b.ign) b.ign = new Map();
+          let g = b.ign.get(ruleId);
+          if (!g) { g = { requests: 0, authFail: 0, notFound: 0, paths: new Set() }; b.ign.set(ruleId, g); }
+          g.requests++;
+          if (entry.status === 404) g.notFound++;
+          if (bf.statuses.includes(entry.status) && bf.pathHint.test(entry.path)) g.authFail++;
+          if (g.paths.size < 500) g.paths.add(entry.path);
+        }
+      }
+    }
+
     // Custom rules: a small, per-request check against each enabled rule's
     // filters. The list is short (hand-authored, not machine-generated), so
     // a linear scan per request is negligible next to log parsing itself.
     for (const rule of this.customRules) {
       if (rule.enable === false) continue;
+      if (ignored && ignored.has(rule.id)) continue;
       if (rule.pathHint && (entry.path == null || !rule.pathHint.test(entry.path))) continue;
       if (rule.uaHint && !(entry.ua && rule.uaHint.test(entry.ua))) continue;
       if (rule.statusIn.length && !rule.statusIn.includes(entry.status)) continue;
       if (rule.methodIn.length && !rule.methodIn.includes(entry.method)) continue;
       b.custom.set(rule.id, (b.custom.get(rule.id) || 0) + 1);
+      if (rule.scope === 'global') this._recordCampaignDetail(b, rule.id, entry, now);
     }
 
     // Evidence samples: kept separately from the counters, bounded in size
@@ -396,6 +545,7 @@ class Detector {
     let requests = 0, authFail = 0, notFound = 0;
     const paths = new Set(), uas = new Set(), vhosts = new Set(), statuses = new Map();
     const custom = new Map();
+    let ign = null; // Map<ruleId, {requests, authFail, notFound, paths}> — voir _effective()
     let first = now;
     for (const [idx, b] of s.buckets) {
       if (idx < cutoffIdx) continue;
@@ -408,9 +558,40 @@ class Detector {
       for (const v of b.vhosts) vhosts.add(v);
       for (const [code, n] of b.statuses) statuses.set(code, (statuses.get(code) || 0) + n);
       for (const [id, n] of b.custom) custom.set(id, (custom.get(id) || 0) + n);
+      if (b.ign) {
+        if (!ign) ign = new Map();
+        for (const [id, g] of b.ign) {
+          let t = ign.get(id);
+          if (!t) { t = { requests: 0, authFail: 0, notFound: 0, paths: new Set() }; ign.set(id, t); }
+          t.requests += g.requests; t.authFail += g.authFail; t.notFound += g.notFound;
+          for (const p of g.paths) t.paths.add(p);
+        }
+      }
     }
     const samples = s.samples.filter(x => x.ts >= now - this.cfg.windowMs).slice(-5);
-    return { requests, authFail, notFound, paths, uas, vhosts, statuses, custom, samples, first, last: s.last };
+    return { requests, authFail, notFound, paths, uas, vhosts, statuses, custom, ign, samples, first, last: s.last };
+  }
+
+  /**
+   * Metriques de la fenetre pour UNE regle, une fois retranchees les requetes
+   * que `# nginx-control-analyze-rule-{ID}-paths-ignore` exclut pour elle.
+   * Sans motif applicable (cas courant) c est l agregat tel quel, sans copie.
+   * Un chemin n est retire de l ensemble des chemins distincts que s il a ete
+   * ignore ; limite assumee : si la meme URL est aussi demandee sur un vhost
+   * qui ne l ignore pas, elle est retiree du decompte (ecart d au plus 1).
+   */
+  _effective(agg, ruleId) {
+    const g = agg.ign && agg.ign.get(ruleId);
+    if (!g) return agg;
+    let pathCount = 0;
+    for (const p of agg.paths) if (!g.paths.has(p)) pathCount++;
+    return {
+      requests: Math.max(0, agg.requests - g.requests),
+      authFail: Math.max(0, agg.authFail - g.authFail),
+      notFound: Math.max(0, agg.notFound - g.notFound),
+      paths: { size: pathCount },
+      uas: agg.uas,
+    };
   }
 
   /**
@@ -440,6 +621,27 @@ class Detector {
     const alerts = [];
     const c = this.cfg;
 
+    // Regles personnalisees « scope: global » : UNE alerte de campagne par regle
+    // (pas une par IP), avec les preuves agregees et la liste des adresses ; le
+    // blocage (dashboard, features/blocklists.js) lit evidence.ips. Declenchee a
+    // l entree ; remise a jour quand le nombre d IP grandit de 50 % ou apres une
+    // fenetre complete tant que la campagne dure.
+    const liveCampaigns = new Set();
+    for (const rule of this.customRules) {
+      if (rule.scope !== 'global' || rule.enable === false) continue;
+      const scan = this._campaignScan(rule, now);
+      const met = scan && scan.total >= rule.minMatches && scan.ips.length >= (rule.minIps || 5);
+      if (!met) continue;
+      liveCampaigns.add(rule.id);
+      const st = this.campaigns.get(rule.id);
+      const grown = st && scan.ips.length >= st.ips * 1.5;
+      const stale = st && now - st.emittedAt >= scan.windowMs;
+      if (st && !grown && !stale) continue;
+      this.campaigns.set(rule.id, { emittedAt: now, ips: scan.ips.length });
+      alerts.push(this._campaignAlert(rule, scan, clampCustomWindowMinutes(rule), !!st));
+    }
+    for (const id of [...this.campaigns.keys()]) if (!liveCampaigns.has(id)) this.campaigns.delete(id);
+
     for (const [ip, s] of this.ips) {
       const agg = this._aggregate(s, now);
       const vhost = agg.vhosts.size === 1 ? [...agg.vhosts][0] : null;
@@ -453,62 +655,68 @@ class Detector {
       // vhost that did NOT opt out can never have the rule silenced on its
       // behalf.
 
-      const base = () => ({
+      // `e` : metriques propres a une regle (voir _effective()) — par defaut
+      // l agregat complet.
+      const base = (e = agg) => ({
         ip, vhost,
         firstSeen: agg.first, lastSeen: agg.last,
-        requests: agg.requests,
-        distinctPaths: agg.paths.size,
+        requests: e.requests,
+        distinctPaths: e.paths.size,
         userAgents: [...agg.uas].slice(0, 3),
         statuses: Object.fromEntries(agg.statuses),
         samples: agg.samples,
       });
 
       // Brute force
+      const bfE = this._effective(agg, RULE_IDS.bruteforce);
       const bfMet = c.bruteforce.enable && !this._ruleSuppressedForVhosts(agg.vhosts, RULE_IDS.bruteforce)
-        && agg.authFail >= c.bruteforce.minFailures;
+        && bfE.authFail >= c.bruteforce.minFailures;
       if (bfMet && this._enter(s, 'bruteforce')) {
         alerts.push({
           type: 'bruteforce', explanation: EXPLANATIONS.bruteforce, severity: 'high',
-          summary: `${agg.authFail} echecs d authentification depuis ${ip} sur les dernieres ${Math.round(c.windowMs / 60000)} min`,
-          evidence: { ...base(), authFailures: agg.authFail },
+          summary: `${bfE.authFail} echecs d authentification depuis ${ip} sur les dernieres ${Math.round(c.windowMs / 60000)} min`,
+          evidence: { ...base(bfE), authFailures: bfE.authFail },
         });
       } else if (!bfMet) this._clear(s, 'bruteforce');
 
       // Scan
+      const scE = this._effective(agg, RULE_IDS.scan);
       const scanMet = c.scan.enable && !this._ruleSuppressedForVhosts(agg.vhosts, RULE_IDS.scan)
-        && agg.requests >= c.scan.minRequests
-        && agg.paths.size >= c.scan.minDistinct
-        && agg.notFound / agg.requests >= c.scan.minNotFoundRatio;
+        && scE.requests >= c.scan.minRequests
+        && scE.paths.size >= c.scan.minDistinct
+        && scE.notFound / scE.requests >= c.scan.minNotFoundRatio;
       if (scanMet && this._enter(s, 'scan')) {
         alerts.push({
           type: 'scan', explanation: EXPLANATIONS.scan, severity: 'medium',
-          summary: `${ip} sonde ${agg.paths.size} chemins distincts, ${Math.round(100 * agg.notFound / agg.requests)}% en 404`,
-          evidence: { ...base(), notFound: agg.notFound },
+          summary: `${ip} sonde ${scE.paths.size} chemins distincts, ${Math.round(100 * scE.notFound / scE.requests)}% en 404`,
+          evidence: { ...base(scE), notFound: scE.notFound },
         });
       } else if (!scanMet) this._clear(s, 'scan');
 
       // Flood
+      const flE = this._effective(agg, RULE_IDS.flood);
       const floodMet = c.flood.enable && !this._ruleSuppressedForVhosts(agg.vhosts, RULE_IDS.flood)
-        && agg.requests >= c.flood.minRequests;
+        && flE.requests >= c.flood.minRequests;
       if (floodMet && this._enter(s, 'flood')) {
         const spanSec = Math.max(1, (agg.last - agg.first) / 1000);
         alerts.push({
           type: 'flood', explanation: EXPLANATIONS.flood, severity: 'high',
-          summary: `${agg.requests} requetes depuis ${ip} sur les dernieres ${Math.round(c.windowMs / 60000)} min (${(agg.requests / spanSec).toFixed(1)}/s)`,
-          evidence: { ...base(), requestsPerSecond: +(agg.requests / spanSec).toFixed(2) },
+          summary: `${flE.requests} requetes depuis ${ip} sur les dernieres ${Math.round(c.windowMs / 60000)} min (${(flE.requests / spanSec).toFixed(1)}/s)`,
+          evidence: { ...base(flE), requestsPerSecond: +(flE.requests / spanSec).toFixed(2) },
         });
       } else if (!floodMet) this._clear(s, 'flood');
 
       // Scraping
+      const srE = this._effective(agg, RULE_IDS.scraping);
       const scrapeMet = c.scraping.enable && !this._ruleSuppressedForVhosts(agg.vhosts, RULE_IDS.scraping)
-        && agg.requests >= c.scraping.minRequests
-        && agg.paths.size <= c.scraping.maxDistinct
+        && srE.requests >= c.scraping.minRequests
+        && srE.paths.size <= c.scraping.maxDistinct
         && [...agg.uas].some(ua => c.scraping.uaHint.test(ua));
       if (scrapeMet && this._enter(s, 'scraping')) {
         alerts.push({
           type: 'scraping', explanation: EXPLANATIONS.scraping, severity: 'low',
-          summary: `${agg.requests} requetes depuis ${ip} sur ${agg.paths.size} chemin(s), agent automatise, dernieres ${Math.round(c.windowMs / 60000)} min`,
-          evidence: base(),
+          summary: `${srE.requests} requetes depuis ${ip} sur ${srE.paths.size} chemin(s), agent automatise, dernieres ${Math.round(c.windowMs / 60000)} min`,
+          evidence: base(srE),
         });
       } else if (!scrapeMet) this._clear(s, 'scraping');
 
@@ -517,6 +725,7 @@ class Detector {
       // quatre regles integrees ci-dessus, mais le seuil et les criteres de
       // correspondance sont entierement definis par l utilisateur.
       for (const rule of this.customRules) {
+        if (rule.scope === 'global') continue; // traite plus haut : une alerte de campagne
         const stateKey = `custom:${rule.id}`;
         const windowMinutes = clampCustomWindowMinutes(rule);
         const count = this._customCount(s, now, rule.id, windowMinutes * 60_000);

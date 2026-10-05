@@ -1,0 +1,41 @@
+# NGX Ops Intelligence — envoi des alertes de l'analyse vers la plateforme centrale (v12.69.0).
+# Désactivé par défaut. Éditable dans « Éditeur de configuration ». Statut et aperçu du prochain lot : page Analyse.
+#
+# enable: false
+#
+# Mode d'envoi :
+#   anonymous  — l'instance se présente uniquement avec son identifiant unique (INSTANCE_ID, page Système)
+#   identified — identifiant + utilisateur + jeton (Authorization: Bearer)
+# mode: anonymous
+#
+# URL (https obligatoire). Défaut : INTEL_API_URL (ARG/ENV de l'image) ; cette clé la surcharge.
+# api_url: "https://intelligence.example.org/api/alerts/send"
+#
+# Mode identified : utilisateur (e-mail) et jeton. Le jeton peut aussi venir de l'ENV INTEL_TOKEN (prioritaire).
+# user: ""
+# token: ""
+#
+# Cadence et taille des lots
+# interval_seconds: 300      # 60–3600
+# batch_size: 100            # 1–500
+# timeout_seconds: 10        # 3–60
+#
+# Quelles alertes ? Les alertes volumétriques n'ont pas de sens hors de l'instance : exclues par défaut.
+# exclude_rules: [volumetric, country_traffic]   # ajouter waf pour ne pas envoyer les alertes du WAF émulé
+# include_rules: []          # vide = toutes les règles non exclues (ex. [ua_attack_tools, probe_sensitive_files, attack_injection_patterns, scan])
+# min_severity: low          # low | medium | high
+#
+# Données partagées en plus de l'IP, de la règle, de la sévérité et des compteurs
+# share_user_agents: true
+# share_paths: true          # échantillon de chemins demandés (10 max)
+# share_vhost: false         # nom du vhost visé
+#
+# Ping de connexion (POST /api/v1/ping) : au démarrage, après modification du fichier, puis périodique.
+# « Intelligent » : sauté tant qu'un envoi d'alertes vient de réussir ; arrêté après un refus 401/403 jusqu'à
+# modification de la configuration ; repli exponentiel sur échec ; limites annoncées par le serveur appliquées.
+# Bouton « Tester la connexion » : page Système.
+# ping_enable: true
+# ping_interval_minutes: 5   # 3–60
+# ping_url: ""               # alias url_ping ; défaut dérivé de api_url (…/events -> …/ping), même hôte obligatoire
+#
+# backfill_hours: 0          # 0 = seulement les alertes futures ; sinon rejouer les N dernières heures (max 168) au premier envoi
