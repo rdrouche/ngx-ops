@@ -59,7 +59,7 @@ jobs:
           REGISTRY="forge.rdr-it.com/ngx-ops/ngx-ops"
 
           # Définition des noms d'images
-          IMAGE_LOCAL="${REGISTRY}/nginx-control"
+          IMAGE_LOCAL="${REGISTRY}/ngx-ops-dashboard"
           
           # 1. Récupération de la chaîne brute des tags
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -146,7 +146,7 @@ jobs:
           REGISTRY="forge.rdr-it.com/ngx-ops/ngx-ops"
 
           # Définition des noms d'images
-          IMAGE_LOCAL="${REGISTRY}/nginx-analyzer-agent"
+          IMAGE_LOCAL="${REGISTRY}/analyzer-agent"
           
           # 1. Récupération de la chaîne brute des tags
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -194,7 +194,7 @@ jobs:
           REGISTRY="forge.rdr-it.com/ngx-ops/ngx-ops"
 
           # Définition des noms d'images
-          IMAGE_LOCAL="${REGISTRY}/nginx-analyzer-agent-go"
+          IMAGE_LOCAL="${REGISTRY}/analyzer-agent-go"
           
           # 1. Récupération de la chaîne brute des tags
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -242,7 +242,7 @@ jobs:
           REGISTRY="forge.rdr-it.com/ngx-ops/ngx-ops"
 
           # Définition des noms d'images
-          IMAGE_LOCAL="${REGISTRY}/nginx-challenge-http"
+          IMAGE_LOCAL="${REGISTRY}/ngx-ops-challenge-http"
           
           # 1. Récupération de la chaîne brute des tags
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -290,7 +290,7 @@ jobs:
           REGISTRY="forge.rdr-it.com/ngx-ops/ngx-ops"
 
           # Définition des noms d'images
-          IMAGE_LOCAL="${REGISTRY}/nginx-agent"
+          IMAGE_LOCAL="${REGISTRY}/ngx-ops-agent"
           
           # 1. Récupération de la chaîne brute des tags
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
