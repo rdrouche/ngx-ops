@@ -84,7 +84,15 @@ jobs:
           SYNC_REF_URL="https://forge.rdr-it.com/ngx-ops/reference-files"
           ALERTING_URL="https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/alert-message"
           CHANGELOG_URL="https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/changelog"
-          ANALYZER_DEFAULT_IMAGE="forge.rdr-it.com/nginx/nginx-control/nginx-analyzer-agent:${PRIMARY_TAG}"
+
+          # DEFAULT IMAGE
+          ANALYZER_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:${PRIMARY_TAG}"
+          CHALLENGE_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/ngx-ops-challenge-http:${PRIMARY_TAG}"
+          WAF_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:${PRIMARY_TAG}"
+          AGENT_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/ngx-ops-agent:${PRIMARY_TAG}"
+
+          # NGINX OPS INTELLIGENCE
+          INTEL_API_URL="https://intelligence.ngx-ops.net/api/v1/events"
 
           # Construction de l'image
           docker build \
@@ -101,7 +109,11 @@ jobs:
             --build-arg SYNC_REF_URL=${SYNC_REF_URL} \
             --build-arg ALERTING_URL=${ALERTING_URL} \
             --build-arg CHANGELOG_URL=${CHANGELOG_URL} \
+            --build-arg INTEL_API_URL=${INTEL_API_URL} \
             --build-arg ANALYZER_DEFAULT_IMAGE=${ANALYZER_DEFAULT_IMAGE} \
+            --build-arg CHALLENGE_DEFAULT_IMAGE=${CHALLENGE_DEFAULT_IMAGE} \
+            --build-arg WAF_DEFAULT_IMAGE=${WAF_DEFAULT_IMAGE} \
+            --build-arg AGENT_DEFAULT_IMAGE=${AGENT_DEFAULT_IMAGE} \
             --label org.opencontainers.image.title="ngx-ops-dashboard" \
             --label org.opencontainers.image.description="NGX Ops Dashboard" \
             --label org.opencontainers.image.authors="Romain Drouche contact@rdr-it.com" \

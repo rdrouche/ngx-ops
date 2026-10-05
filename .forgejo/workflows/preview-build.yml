@@ -53,10 +53,10 @@ jobs:
       - name: Login to Forgejo Registry
         run: echo "${{ secrets.REPO_TOKEN }}" | docker login ${{ github.server_url }} -u ${{ github.actor }} --password-stdin
 
-      - name: Build and Push - Nginx Control
+      - name: Build and Push - NGX Ops Dashboard
         run: |
           # Local Registry 
-          REGISTRY="forge.rdr-it.com/nginx/nginx-control"
+          REGISTRY="forge.rdr-it.com/ngx-ops/ngx-ops"
 
           # Définition des noms d'images
           IMAGE_LOCAL="${REGISTRY}/nginx-control"
@@ -83,15 +83,22 @@ jobs:
           BRANDING_DOC="https://docs.nginx-control.rdr-it.com/"
 
           # VERSION CONTROL
-          DASHBOARD_VERSION_URL="https://forge.rdr-it.com/Nginx/nginx-control/raw/branch/main/meta/version-nginx-control"        
-          NGINX_VERSION_URL="https://forge.rdr-it.com/Nginx/nginx-control/raw/branch/main/meta/version-nginx"
+          DASHBOARD_VERSION_URL="https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/version-nginx-control"        
+          NGINX_VERSION_URL="https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/version-nginx"
 
           # COMPONENT CONTROL
-          SYNC_REF_URL="https://forge.rdr-it.com/Nginx/reference-files"
-          ALERTING_URL="https://forge.rdr-it.com/Nginx/nginx-control/raw/branch/main/meta/alert-message"
-          CHANGELOG_URL="https://forge.rdr-it.com/Nginx/nginx-control/raw/branch/main/meta/changelog"
-          ANALYZER_DEFAULT_IMAGE="forge.rdr-it.com/nginx/nginx-control/nginx-analyzer-agent-go:${PRIMARY_TAG}"
-          CHALLENGE_DEFAULT_IMAGE="forge.rdr-it.com/nginx/nginx-control/nginx-challenge-http:${PRIMARY_TAG}"
+          SYNC_REF_URL="https://forge.rdr-it.com/ngx-ops/reference-files"
+          ALERTING_URL="https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/alert-message"
+          CHANGELOG_URL="https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/changelog"
+
+          # DEFAULT IMAGE
+          ANALYZER_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:${PRIMARY_TAG}"
+          CHALLENGE_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/ngx-ops-challenge-http:${PRIMARY_TAG}"
+          WAF_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:${PRIMARY_TAG}"
+          AGENT_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/ngx-ops-agent:${PRIMARY_TAG}"
+
+          # NGINX OPS INTELLIGENCE
+          INTEL_API_URL="https://intelligence.ngx-ops.net/api/v1/events"
 
           # Construction de l'image
           docker build \
@@ -108,7 +115,11 @@ jobs:
             --build-arg SYNC_REF_URL=${SYNC_REF_URL} \
             --build-arg ALERTING_URL=${ALERTING_URL} \
             --build-arg CHANGELOG_URL=${CHANGELOG_URL} \
+            --build-arg INTEL_API_URL=${INTEL_API_URL} \
             --build-arg ANALYZER_DEFAULT_IMAGE=${ANALYZER_DEFAULT_IMAGE} \
+            --build-arg CHALLENGE_DEFAULT_IMAGE=${CHALLENGE_DEFAULT_IMAGE} \
+            --build-arg WAF_DEFAULT_IMAGE=${WAF_DEFAULT_IMAGE} \
+            --build-arg AGENT_DEFAULT_IMAGE=${AGENT_DEFAULT_IMAGE} \
             --label org.opencontainers.image.title="nginx-control" \
             --label org.opencontainers.image.description="Nginx Control Nightly Not Use In PROD" \
             --label org.opencontainers.image.authors="Romain Drouche contact@rdr-it.com" \
@@ -129,10 +140,10 @@ jobs:
             docker push $IMAGE_LOCAL:$TAG
           done
 
-      - name: Build and Push - Nginx Analyzer Agent
+      - name: Build and Push - NGX Ops Analyzer Agent
         run: |
           # Local Registry 
-          REGISTRY="forge.rdr-it.com/nginx/nginx-control"
+          REGISTRY="forge.rdr-it.com/ngx-ops/ngx-ops"
 
           # Définition des noms d'images
           IMAGE_LOCAL="${REGISTRY}/nginx-analyzer-agent"
@@ -177,10 +188,10 @@ jobs:
           done
 
       # NGINX ANALYZER GO - WAF EMULE
-      - name: Nginx Analyzer GO - Build and Push
+      - name: NGX OPS Analyzer GO - Build and Push
         run: |
           # Local Registry 
-          REGISTRY="forge.rdr-it.com/nginx/nginx-control"
+          REGISTRY="forge.rdr-it.com/ngx-ops/ngx-ops"
 
           # Définition des noms d'images
           IMAGE_LOCAL="${REGISTRY}/nginx-analyzer-agent-go"
@@ -225,10 +236,10 @@ jobs:
           done
 
       # NGINX CHALLENGE HTTP
-      - name: Nginx Challenge HTTP - Build and Push
+      - name: NGX OPS Challenge HTTP - Build and Push
         run: |
           # Local Registry 
-          REGISTRY="forge.rdr-it.com/nginx/nginx-control"
+          REGISTRY="forge.rdr-it.com/ngx-ops/ngx-ops"
 
           # Définition des noms d'images
           IMAGE_LOCAL="${REGISTRY}/nginx-challenge-http"
@@ -276,7 +287,7 @@ jobs:
       - name: Build and Push - Nginx Agent
         run: |
           # Local Registry 
-          REGISTRY="forge.rdr-it.com/nginx/nginx-control"
+          REGISTRY="forge.rdr-it.com/ngx-ops/ngx-ops"
 
           # Définition des noms d'images
           IMAGE_LOCAL="${REGISTRY}/nginx-agent"
