@@ -8,69 +8,127 @@ on:
         required: true
         type: string
         default: 'nightly'
+  # Optionnel : build automatique sur push de tag git
+  # push:
+  #   tags: ['*']
+
+# Évite deux builds simultanés sur la même ref
+concurrency:
+  group: build-images-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
-  REGISTRY="forge.rdr-it.com/ngx-ops/ngx-ops"
-  IMG_NGXOPS_DASHBOARD="ngx-ops-dashboard"
-  IMG_NGXOPS_ANALYZER="analyzer-agent"
-  IMG_NGXOPS_ANALYZER_GO="analyzer-agent-go"
-  IMG_NGXOPS_HTTP_CHALLENGE="ngx-ops-challenge-http"
-  IMG_NGXOPS_AGENT_GO="ngx-ops-agent"
+  REGISTRY_HOST: forge.rdr-it.com
+  REGISTRY: forge.rdr-it.com/ngx-ops/ngx-ops
+  IMAGE_AUTHOR: "Romain Drouche <contact@rdr-it.com>"
 
-  ANALYZER_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:${PRIMARY_TAG}"
-  CHALLENGE_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/ngx-ops-challenge-http:${PRIMARY_TAG}"
-  WAF_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:${PRIMARY_TAG}"
-  AGENT_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/ngx-ops-agent:${PRIMARY_TAG}" 
-
-  BRANDING_KOFI="https://ko-fi.com/rdrit0980"
-  BRANDING_SITE_LABEL="NGX OPS"
-  BRANDING_SITE="https://ngx-ops.net/"
-  BRANDING_REPO="https://forge.rdr-it.com/ngx-ops/ngx-ops/"
-  BRANDING_DOC="https://docs.ngx-ops.net/"
-
-  DASHBOARD_VERSION_URL="https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/version-nginx-control"        
-  NGINX_VERSION_URL="https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/version-nginx"
-
-  SYNC_REF_URL="https://forge.rdr-it.com/ngx-ops/reference-files"
-  ALERTING_URL="https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/alert-message"
-  CHANGELOG_URL="https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/changelog"
-
-  INTEL_API_URL="https://intelligence.ngx-ops.net/api/v1/events"
-
-  IMAGE_AUTHOR="Romain Drouche contact@rdr-it.com"
-  
+  # Spécifique au dashboard
+  BRANDING_KOFI: https://ko-fi.com/rdrit0980
+  BRANDING_SITE_LABEL: NGX OPS
+  BRANDING_SITE: https://ngx-ops.net/
+  BRANDING_REPO: https://forge.rdr-it.com/ngx-ops/ngx-ops/
+  BRANDING_DOC: https://docs.ngx-ops.net/
+  DASHBOARD_VERSION_URL: https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/version-nginx-control
+  NGINX_VERSION_URL: https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/version-nginx
+  SYNC_REF_URL: https://forge.rdr-it.com/ngx-ops/reference-files
+  ALERTING_URL: https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/alert-message
+  CHANGELOG_URL: https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/changelog
+  INTEL_API_URL: https://intelligence.ngx-ops.net/api/v1/events
 
 jobs:
-  build-and-push:
-    runs-on: docker 
+  # ---------------------------------------------------------------
+  # 1. Calcul des tags une seule fois, validés, partagés aux builds
+  # ---------------------------------------------------------------
+  prepare:
+    runs-on: docker
     container:
-      image: docker:latest
+      image: alpine:3.20
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    outputs:
+      tags: ${{ steps.tags.outputs.tags }}
+      primary: ${{ steps.tags.outputs.primary }}
+      created: ${{ steps.tags.outputs.created }}
+    steps:
+      - name: Interdire le build depuis main
+        if: github.ref_name == 'main'
+        run: |
+          echo "::error::Le build est interdit depuis la branche main !"
+          exit 1
+
+      - name: Calculer et valider les tags
+        id: tags
+        env:
+          # Passage par variable d'env : évite l'injection de code via l'input
+          EVENT: ${{ github.event_name }}
+          INPUT_TAGS: ${{ github.event.inputs.tag_name }}
+          REF: ${{ github.ref }}
+        run: |
+          set -eu
+          if [ "$EVENT" = "workflow_dispatch" ]; then RAW="$INPUT_TAGS"; else RAW="${REF#refs/tags/}"; fi
+
+          TAGS=$(echo "$RAW" | tr ',' ' ' | xargs)
+          [ -n "$TAGS" ] || { echo "::error::Aucun tag fourni"; exit 1; }
+
+          for t in $TAGS; do
+            echo "$t" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$' \
+              || { echo "::error::Tag Docker invalide : '$t'"; exit 1; }
+          done
+
+          PRIMARY="${TAGS%% *}"
+          {
+            echo "tags=$TAGS"
+            echo "primary=$PRIMARY"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+          echo "Tag principal : $PRIMARY / Tous : $TAGS"
+
+  # ---------------------------------------------------------------
+  # 2. Un seul bloc de build, décliné par image via une matrice
+  # ---------------------------------------------------------------
+  build:
+    needs: prepare
+    runs-on: docker
+    container:
+      image: docker:27-cli   # version épinglée plutôt que latest
     env:
       DOCKER_HOST: unix:///var/run/docker.sock
-    # Security : check if on tag  
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      max-parallel: 2        # à ajuster selon la puissance du runner
+      matrix:
+        include:
+          - image: ngx-ops-dashboard
+            context: nginx-control
+            title: ngx-ops-dashboard
+            description: NGX Ops Dashboard
+          - image: analyzer-agent
+            context: nginx-analyzer-agent
+            title: ngxops-analyzer-agent
+            description: Analyzer Agent - NGX-OPS
+          - image: analyzer-agent-go
+            context: nginx-analyzer-agent-go
+            title: nginx-analyzer-agent-go
+            description: Analyzer Agent GO for NGX Ops
+          - image: ngx-ops-challenge-http
+            context: nginx-challenge
+            title: ngx-ops-challenge-http
+            description: Challenge HTTP GO for NGX Ops
+          - image: ngx-ops-agent
+            context: nginx-agent
+            title: nginx-agent-for-ngx-ops
+            description: Nginx Agent (Docker Auto + Proxy) For NGX OPS
 
     steps:
-      - name: Check branch (Fail if main)
-        run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "::error::Le build est interdit depuis la branche main !"
-            exit 1
-          fi
-          
-      - name: Install Node.js 
+      - name: Installer Node.js (requis par actions/checkout)
         run: apk add --no-cache nodejs npm
 
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Optimize index.html (Minify)
+      - name: Minifier index.html
+        if: matrix.image == 'ngx-ops-dashboard'
         run: |
-          # Installation temporaire de html-minifier-terser
-          npm install -g html-minifier-terser
-          
-          # Minification : suppression espaces, commentaires, retours à la ligne
-          html-minifier-terser \
+          npx --yes html-minifier-terser@7 \
             --collapse-whitespace \
             --remove-comments \
             --remove-optional-tags \
@@ -80,248 +138,77 @@ jobs:
             --minify-js true \
             -o nginx-control/public/index.html \
             nginx-control/public/index.html
-      
-      - name: Login to Forgejo Registry
-        run: echo "${{ secrets.REPO_TOKEN }}" | docker login ${{ github.server_url }} -u ${{ github.actor }} --password-stdin
 
-      - name: Build and Push - NGX Ops Dashboard
-        run: |          
+      - name: Login au registre Forgejo
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "$REPO_TOKEN" | docker login "$REGISTRY_HOST" -u "$ACTOR" --password-stdin
 
-          # Définition des noms d'images
-          IMAGE_LOCAL="${REGISTRY}/${IMG_NGXOPS_DASHBOARD}"
-          
-          # 1. Récupération de la chaîne brute des tags
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            RAW_TAGS="${{ github.event.inputs.tag_name }}"
-          else
-            RAW_TAGS="${GITHUB_REF#refs/tags/}"
-          fi
-
-          # 2. Nettoyage de la liste (gestion des espaces éventuels autour des virgules)
-          # "1.0.0, stable, latest" devient une liste utilisable par Bash
-          TAG_LIST=$(echo "$RAW_TAGS" | tr ',' ' ')
-
-          # 3. Extraction du premier tag pour s'en servir comme tag principal pour le build
-          PRIMARY_TAG=$(echo $TAG_LIST | awk '{print $1}')          
-
-          # Construction de l'image
-          docker build \
-            --build-arg APP_VERSION=${PRIMARY_TAG} \
-            --build-arg APP_REVISION=${{ github.sha }} \
-            --build-arg APP_CREATED=${BUILD_DATE} \
-            --build-arg BRANDING_KOFI=${BRANDING_KOFI} \
-            --build-arg BRANDING_SITE_LABEL="${BRANDING_SITE_LABEL}" \
-            --build-arg BRANDING_SITE=${BRANDING_SITE} \
-            --build-arg BRANDING_REPO=${BRANDING_REPO} \
-            --build-arg BRANDING_DOC=${BRANDING_DOC} \
-            --build-arg DASHBOARD_VERSION_URL=${DASHBOARD_VERSION_URL} \
-            --build-arg NGINX_VERSION_URL=${NGINX_VERSION_URL} \
-            --build-arg SYNC_REF_URL=${SYNC_REF_URL} \
-            --build-arg ALERTING_URL=${ALERTING_URL} \
-            --build-arg CHANGELOG_URL=${CHANGELOG_URL} \
-            --build-arg INTEL_API_URL=${INTEL_API_URL} \
-            --build-arg ANALYZER_DEFAULT_IMAGE=${ANALYZER_DEFAULT_IMAGE} \
-            --build-arg CHALLENGE_DEFAULT_IMAGE=${CHALLENGE_DEFAULT_IMAGE} \
-            --build-arg WAF_DEFAULT_IMAGE=${WAF_DEFAULT_IMAGE} \
-            --build-arg AGENT_DEFAULT_IMAGE=${AGENT_DEFAULT_IMAGE} \
-            --label org.opencontainers.image.title="ngx-ops-dashboard" \
-            --label org.opencontainers.image.description="NGX Ops Dashboard - Nightly Not Use In PROD" \
-            --label org.opencontainers.image.authors="${IMAGE_AUTHOR}" \
-            --label org.opencontainers.image.version=$PRIMARY_TAG \
-            --label org.opencontainers.image.revision=${{ github.sha }} \
-            --label org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
-            -t $IMAGE_LOCAL:$PRIMARY_TAG \
-            -f nginx-control/Dockerfile nginx-control/ \
-            --no-cache
-
-          # 5. Boucle pour appliquer chaque tag et le pusher sur le registre
-          for TAG in $TAG_LIST; do
-            echo "--- Traitement du tag : $TAG ---"
-            if [ "$TAG" != "$PRIMARY_TAG" ]; then
-              docker tag $IMAGE_LOCAL:$PRIMARY_TAG $IMAGE_LOCAL:$TAG
-            fi
-            docker push $IMAGE_LOCAL:$TAG
-          done
-
-      - name: Build and Push - NGX Ops Analyzer Agent
+      - name: Build & push ${{ matrix.image }}
+        env:
+          TAGS: ${{ needs.prepare.outputs.tags }}
+          PRIMARY: ${{ needs.prepare.outputs.primary }}
+          CREATED: ${{ needs.prepare.outputs.created }}
+          IMAGE_NAME: ${{ matrix.image }}
+          CTX: ${{ matrix.context }}
+          TITLE: ${{ matrix.title }}
+          DESCRIPTION: ${{ matrix.description }}
+          SHA: ${{ github.sha }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
         run: |
-          # Définition des noms d'images
-          IMAGE_LOCAL="${REGISTRY}/${IMG_NGXOPS_ANALYZER}"
-          
-          # 1. Récupération de la chaîne brute des tags
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            RAW_TAGS="${{ github.event.inputs.tag_name }}"
-          else
-            RAW_TAGS="${GITHUB_REF#refs/tags/}"
+          set -eu
+          IMAGE="$REGISTRY/$IMAGE_NAME"
+
+          # Avertissement "nightly" uniquement quand c'est le cas
+          case "$PRIMARY" in
+            nightly*) DESCRIPTION="$DESCRIPTION - Nightly, ne pas utiliser en PROD" ;;
+          esac
+
+          # Arguments communs (set -- = tableau d'arguments sûr en sh, gère les espaces)
+          set -- \
+            --build-arg APP_VERSION="$PRIMARY" \
+            --build-arg APP_REVISION="$SHA" \
+            --build-arg APP_CREATED="$CREATED"
+
+          # Arguments spécifiques au dashboard
+          if [ "$IMAGE_NAME" = "ngx-ops-dashboard" ]; then
+            set -- "$@" \
+              --build-arg BRANDING_KOFI="$BRANDING_KOFI" \
+              --build-arg BRANDING_SITE_LABEL="$BRANDING_SITE_LABEL" \
+              --build-arg BRANDING_SITE="$BRANDING_SITE" \
+              --build-arg BRANDING_REPO="$BRANDING_REPO" \
+              --build-arg BRANDING_DOC="$BRANDING_DOC" \
+              --build-arg DASHBOARD_VERSION_URL="$DASHBOARD_VERSION_URL" \
+              --build-arg NGINX_VERSION_URL="$NGINX_VERSION_URL" \
+              --build-arg SYNC_REF_URL="$SYNC_REF_URL" \
+              --build-arg ALERTING_URL="$ALERTING_URL" \
+              --build-arg CHANGELOG_URL="$CHANGELOG_URL" \
+              --build-arg INTEL_API_URL="$INTEL_API_URL" \
+              --build-arg ANALYZER_DEFAULT_IMAGE="$REGISTRY/analyzer-agent-go:$PRIMARY" \
+              --build-arg CHALLENGE_DEFAULT_IMAGE="$REGISTRY/ngx-ops-challenge-http:$PRIMARY" \
+              --build-arg WAF_DEFAULT_IMAGE="$REGISTRY/analyzer-agent-go:$PRIMARY" \
+              --build-arg AGENT_DEFAULT_IMAGE="$REGISTRY/ngx-ops-agent:$PRIMARY"
           fi
 
-          # 2. Nettoyage de la liste (gestion des espaces éventuels autour des virgules)
-          # "1.0.0, stable, latest" devient une liste utilisable par Bash
-          TAG_LIST=$(echo "$RAW_TAGS" | tr ',' ' ')
+          docker build "$@" \
+            --label org.opencontainers.image.title="$TITLE" \
+            --label org.opencontainers.image.description="$DESCRIPTION" \
+            --label org.opencontainers.image.authors="$IMAGE_AUTHOR" \
+            --label org.opencontainers.image.version="$PRIMARY" \
+            --label org.opencontainers.image.revision="$SHA" \
+            --label org.opencontainers.image.created="$CREATED" \
+            --label org.opencontainers.image.source="$SOURCE" \
+            --pull --no-cache \
+            -t "$IMAGE:$PRIMARY" \
+            -f "$CTX/Dockerfile" "$CTX"
 
-          # 3. Extraction du premier tag pour s'en servir comme tag principal pour le build
-          PRIMARY_TAG=$(echo $TAG_LIST | awk '{print $1}')
-
-          # Construction de l'image
-          docker build \
-            --build-arg APP_VERSION=${PRIMARY_TAG} \
-            --build-arg APP_REVISION=${{ github.sha }} \
-            --build-arg APP_CREATED=${BUILD_DATE} \
-            --label org.opencontainers.image.title="ngxops-analyzer-agent" \
-            --label org.opencontainers.image.description="Analyzer Agent - NGX-OPS" \
-            --label org.opencontainers.image.authors="${IMAGE_AUTHOR}" \
-            --label org.opencontainers.image.version=$PRIMARY_TAG \
-            --label org.opencontainers.image.revision=${{ github.sha }} \
-            --label org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
-            -t $IMAGE_LOCAL:$PRIMARY_TAG \
-            -f nginx-analyzer-agent/Dockerfile nginx-analyzer-agent/ \
-            --no-cache
-
-          # 5. Boucle pour appliquer chaque tag et le pusher sur le registre
-          for TAG in $TAG_LIST; do
-            echo "--- Traitement du tag : $TAG ---"
-            if [ "$TAG" != "$PRIMARY_TAG" ]; then
-              docker tag $IMAGE_LOCAL:$PRIMARY_TAG $IMAGE_LOCAL:$TAG
-            fi
-            docker push $IMAGE_LOCAL:$TAG
+          for TAG in $TAGS; do
+            echo "--- Tag : $TAG ---"
+            [ "$TAG" = "$PRIMARY" ] || docker tag "$IMAGE:$PRIMARY" "$IMAGE:$TAG"
+            docker push "$IMAGE:$TAG"
           done
 
-      # NGINX ANALYZER GO - WAF EMULE
-      - name: NGX OPS Analyzer GO - Build and Push
-        run: |
-          # Définition des noms d'images
-          IMAGE_LOCAL="${REGISTRY}/${IMG_NGXOPS_ANALYZER_GO}"
-          
-          # 1. Récupération de la chaîne brute des tags
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            RAW_TAGS="${{ github.event.inputs.tag_name }}"
-          else
-            RAW_TAGS="${GITHUB_REF#refs/tags/}"
-          fi
-
-          # 2. Nettoyage de la liste (gestion des espaces éventuels autour des virgules)
-          # "1.0.0, stable, latest" devient une liste utilisable par Bash
-          TAG_LIST=$(echo "$RAW_TAGS" | tr ',' ' ')
-
-          # 3. Extraction du premier tag pour s'en servir comme tag principal pour le build
-          PRIMARY_TAG=$(echo $TAG_LIST | awk '{print $1}')
-
-          # Construction de l'image
-          docker build \
-            --build-arg APP_VERSION=${PRIMARY_TAG} \
-            --build-arg APP_REVISION=${{ github.sha }} \
-            --build-arg APP_CREATED=${BUILD_DATE} \
-            --label org.opencontainers.image.title="nginx-analyzer-agent-go" \
-            --label org.opencontainers.image.description="Analyzer Agent GO for Nginx Control" \
-            --label org.opencontainers.image.authors="${IMAGE_AUTHOR}" \
-            --label org.opencontainers.image.version=$PRIMARY_TAG \
-            --label org.opencontainers.image.revision=${{ github.sha }} \
-            --label org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
-            -t $IMAGE_LOCAL:$PRIMARY_TAG \
-            -f nginx-analyzer-agent-go/Dockerfile nginx-analyzer-agent-go/ \
-            --no-cache
-
-          # 5. Boucle pour appliquer chaque tag et le pusher sur le registre
-          for TAG in $TAG_LIST; do
-            echo "--- Traitement du tag : $TAG ---"
-            if [ "$TAG" != "$PRIMARY_TAG" ]; then
-              docker tag $IMAGE_LOCAL:$PRIMARY_TAG $IMAGE_LOCAL:$TAG
-            fi
-            docker push $IMAGE_LOCAL:$TAG
-          done
-
-      # NGINX CHALLENGE HTTP
-      - name: NGX OPS Challenge HTTP - Build and Push
-        run: |
-          # Définition des noms d'images
-          IMAGE_LOCAL="${REGISTRY}/${IMG_NGXOPS_HTTP_CHALLENGE}"
-          
-          # 1. Récupération de la chaîne brute des tags
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            RAW_TAGS="${{ github.event.inputs.tag_name }}"
-          else
-            RAW_TAGS="${GITHUB_REF#refs/tags/}"
-          fi
-
-          # 2. Nettoyage de la liste (gestion des espaces éventuels autour des virgules)
-          # "1.0.0, stable, latest" devient une liste utilisable par Bash
-          TAG_LIST=$(echo "$RAW_TAGS" | tr ',' ' ')
-
-          # 3. Extraction du premier tag pour s'en servir comme tag principal pour le build
-          PRIMARY_TAG=$(echo $TAG_LIST | awk '{print $1}')
-
-          # Construction de l'image
-          docker build \
-            --build-arg APP_VERSION=${PRIMARY_TAG} \
-            --build-arg APP_REVISION=${{ github.sha }} \
-            --build-arg APP_CREATED=${BUILD_DATE} \
-            --label org.opencontainers.image.title="ngx-ops-challenge-http" \
-            --label org.opencontainers.image.description="Challenge HTTP GO for NGX Ops" \
-            --label org.opencontainers.image.authors="${IMAGE_AUTHOR}" \
-            --label org.opencontainers.image.version=$PRIMARY_TAG \
-            --label org.opencontainers.image.revision=${{ github.sha }} \
-            --label org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
-            -t $IMAGE_LOCAL:$PRIMARY_TAG \
-            -f nginx-challenge/Dockerfile nginx-challenge/ \
-            --no-cache
-
-          # 5. Boucle pour appliquer chaque tag et le pusher sur le registre
-          for TAG in $TAG_LIST; do
-            echo "--- Traitement du tag : $TAG ---"
-            if [ "$TAG" != "$PRIMARY_TAG" ]; then
-              docker tag $IMAGE_LOCAL:$PRIMARY_TAG $IMAGE_LOCAL:$TAG
-            fi
-            docker push $IMAGE_LOCAL:$TAG
-          done
-        
-      # NGINX AGENT FOR DOCKER
-      - name: Build and Push - Nginx Agent
-        run: |
-          # Définition des noms d'images
-          IMAGE_LOCAL="${REGISTRY}/${IMG_NGXOPS_AGENT_GO}"
-          
-          # 1. Récupération de la chaîne brute des tags
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            RAW_TAGS="${{ github.event.inputs.tag_name }}"
-          else
-            RAW_TAGS="${GITHUB_REF#refs/tags/}"
-          fi
-
-          # 2. Nettoyage de la liste (gestion des espaces éventuels autour des virgules)
-          # "1.0.0, stable, latest" devient une liste utilisable par Bash
-          TAG_LIST=$(echo "$RAW_TAGS" | tr ',' ' ')
-
-          # 3. Extraction du premier tag pour s'en servir comme tag principal pour le build
-          PRIMARY_TAG=$(echo $TAG_LIST | awk '{print $1}')
-
-          # Construction de l'image
-          docker build \
-            --build-arg APP_VERSION=${PRIMARY_TAG} \
-            --build-arg APP_REVISION=${{ github.sha }} \
-            --build-arg APP_CREATED=${BUILD_DATE} \
-            --label org.opencontainers.image.title="nginx-agent-for-ngx-ops" \
-            --label org.opencontainers.image.description="Nginx Agent (Docker Auto + Proxy) For NGX OPS" \
-            --label org.opencontainers.image.authors="${IMAGE_AUTHOR}" \
-            --label org.opencontainers.image.version=$PRIMARY_TAG \
-            --label org.opencontainers.image.revision=${{ github.sha }} \
-            --label org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
-            -t $IMAGE_LOCAL:$PRIMARY_TAG \
-            -f nginx-agent/Dockerfile nginx-agent/ \
-            --no-cache
-
-          # 5. Boucle pour appliquer chaque tag et le pusher sur le registre
-          for TAG in $TAG_LIST; do
-            echo "--- Traitement du tag : $TAG ---"
-            if [ "$TAG" != "$PRIMARY_TAG" ]; then
-              docker tag $IMAGE_LOCAL:$PRIMARY_TAG $IMAGE_LOCAL:$TAG
-            fi
-            docker push $IMAGE_LOCAL:$TAG
-          done
-
-
-      
+      - name: Logout
+        if: always()
+        run: docker logout "$REGISTRY_HOST" || true
