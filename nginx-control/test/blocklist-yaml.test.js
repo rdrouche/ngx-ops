@@ -241,5 +241,15 @@ check('v12.70.4 : champs decales d\'un espace (5 espaces) acceptes, source waf v
   assert.strictEqual(r.valid.length, 1); assert.strictEqual(r.valid[0].type, 'waf'); assert.strictEqual(r.valid[0].list, 'block');
 });
 
+check('v12.73.0 : source type challenge valide (sans url/list), action deny_403 ou drop_444', () => {
+  const r = pv(['  - name: challenge-bans', '    type: challenge', '    action: drop_444']);
+  assert.deepStrictEqual(r.errors, []);
+  assert.deepStrictEqual(r.valid[0], { name: 'challenge-bans', type: 'challenge', enable: true, action: 'drop_444' });
+});
+check('v12.73.0 : source challenge refuse url et action challenge', () => {
+  assert.ok(pv(['  - name: c', '    type: challenge', '    url: https://x.tld/l']).errors.length);
+  assert.ok(pv(['  - name: c', '    type: challenge', '    action: challenge']).errors.length);
+});
+
 console.log(`\n${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

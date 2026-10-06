@@ -259,6 +259,10 @@ class RulesManager {
         learningDays: thresholds.country_traffic.learningDays, sigmaThreshold: thresholds.country_traffic.sigmaThreshold,
         minAbsoluteRequests: thresholds.country_traffic.minAbsoluteRequests,
       },
+      data_volume: () => thresholds.data_volume && {
+        learningDays: thresholds.data_volume.learningDays, sigmaThreshold: thresholds.data_volume.sigmaThreshold,
+        minAbsoluteBytes: thresholds.data_volume.minAbsoluteRequests,
+      },
     };
     const builtins = BUILTIN_KEYS.map(key => ({
       key, id: RULE_IDS[key],

@@ -14,7 +14,7 @@ const instance = { id: '3df7919e-94f5-4635-91c6-8189f6475ebf', version: '12.69.0
   await check('defaut : desactive, anonyme, volumetrique exclue, https obligatoire', () => {
     const { settings } = norm('');
     assert.strictEqual(settings.enable, false); assert.strictEqual(settings.mode, 'anonymous');
-    assert.deepStrictEqual(settings.excludeRules, ['volumetric', 'country_traffic']);
+    assert.deepStrictEqual(settings.excludeRules, ['volumetric', 'country_traffic', 'data_volume']);
     assert.strictEqual(norm('api_url: http://x.tld/a').settings.apiUrl, '');
     assert.ok(norm('api_url: http://x.tld/a').errors.length);
     assert.ok(norm('api_url: "https://u:p@x.tld/a"').errors.length, 'identifiants dans l URL refuses');
@@ -257,6 +257,24 @@ const instance = { id: '3df7919e-94f5-4635-91c6-8189f6475ebf', version: '12.69.0
   await check('exclude_rules: [waf] retire les alertes waf', () => {
     assert.strictEqual(C.shouldSend(wafAlert, { ...settings, excludeRules: ['waf'] }), false);
     assert.strictEqual(C.shouldSend(wafAlert, { ...settings, excludeRules: ['volumetric'], includeRules: [] }), true);
+  });
+
+  console.log('\nv12.73.0 — blocages du challenge integre');
+  const chAlert = { id: 3, ts: 1791043525385, type: 'challenge', severity: 'medium', ip: '203.0.113.9', vhost: 'blog.example.com',
+    evidence: { requests: 42, redirected: 40, failed: 2, rateLimited: 0, banHours: 24, windowMinutes: 60, userAgents: ['curl/8'] } };
+  await check('include_challenge : defaut false, activable', () => {
+    assert.strictEqual(norm('').settings.includeChallenge, false);
+    assert.strictEqual(norm('include_challenge: true').settings.includeChallenge, true);
+    assert.deepStrictEqual(norm('include_challenge: true').errors, []);
+  });
+  await check('une alerte challenge est mise en forme (kind challenge, compteurs, partage)', () => {
+    const o = C.shapeAlert(chAlert, settings);
+    assert.strictEqual(o.rule.kind, 'challenge'); assert.strictEqual(o.ip, '203.0.113.9');
+    assert.deepStrictEqual(o.challenge, { attempts: 42, redirected: 40, failed: 2, rate_limited: 0, ban_hours: 24 });
+    assert.deepStrictEqual(o.user_agents, ['curl/8']);
+    assert.strictEqual(C.shapeAlert(chAlert, { ...settings, shareUserAgents: false }).user_agents, undefined);
+    assert.strictEqual(C.shouldSend(chAlert, settings), true);
+    assert.strictEqual(C.shouldSend(chAlert, { ...settings, excludeRules: ['challenge'] }), false);
   });
 
   console.log(`\n${pass} pass, ${fail} fail`);

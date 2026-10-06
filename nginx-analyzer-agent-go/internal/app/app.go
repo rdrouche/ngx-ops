@@ -8,6 +8,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ import (
 type vhostHourMetrics struct {
 	Requests int64
 	Errors   int64
+	Bytes    int64
 	IPs      map[string]struct{}
 	Paths    map[string]struct{}
 }
@@ -61,6 +63,7 @@ type App struct {
 	Detector        *detect.Detector
 	Baseline        *baseline.Baseline
 	CountryBaseline *baseline.Baseline
+	DataBaseline    *baseline.Baseline
 
 	Tailer          *tail.Tailer
 	WafTailer       *tail.Tailer
@@ -115,6 +118,8 @@ func New(cfg *config.Config) *App {
 		DayDays:     config.StoreRetentionDayDays,
 	}})
 
+	st.CompactOnStart(cfg.DBCompactOnStart, cfg.DBCompactMinFreeMb, cfg.DBCompactMinFreePct)
+
 	rulesManager := rules.New(st, map[string]bool{
 		"bruteforce":      cfg.RuleBruteforceEnable,
 		"scan":            cfg.RuleScanEnable,
@@ -122,6 +127,7 @@ func New(cfg *config.Config) *App {
 		"scraping":        cfg.RuleScrapingEnable,
 		"volumetric":      cfg.RuleVolumetricEnable,
 		"country_traffic": cfg.RuleCountryTrafficEnable,
+		"data_volume":     cfg.RuleDataVolumeEnable,
 	})
 
 	detector := detect.New(detect.Config{
@@ -156,9 +162,17 @@ func New(cfg *config.Config) *App {
 		Enable:              boolPtr(rulesManager.IsEnabled("country_traffic")),
 	}, loadBaselineState(st.GetState("country_baseline")))
 
+	dataBl := baseline.New(baseline.Config{
+		LearningDays: cfg.LearningDays, SigmaThreshold: float64(cfg.DataSigmaThreshold),
+		MinAbsoluteRequests: cfg.DataMinBytes,
+		Enable:              boolPtr(rulesManager.IsEnabled("data_volume")),
+	}, loadBaselineState(st.GetState("data_baseline")))
+
+	seedDataBaseline(st, dataBl)
+
 	a := &App{
 		Cfg: cfg, Store: st, Rules: rulesManager, Detector: detector,
-		Baseline: bl, CountryBaseline: countryBl,
+		Baseline: bl, CountryBaseline: countryBl, DataBaseline: dataBl,
 		hourlyByHour:        baseline.NewHourlyAccumulator[string, vhostHourMetrics](0, 0),
 		hourlyCountryByHour: baseline.NewHourlyAccumulator[string, countryHourMetrics](0, 0),
 	}
@@ -306,3 +320,26 @@ var classifyAgent = botclass.ClassifyAgent
 var nowMs = func() int64 { return time.Now().UnixMilli() }
 
 func msToTime(ms int64) time.Time { return time.UnixMilli(ms) }
+
+// seedDataBaseline amorce la baseline "volume de donnees" depuis l'historique stocke
+// (octets par vhost et par heure, ~30 j) au tout premier demarrage de la regle. Exclut les
+// 2 dernieres heures : le flux normal les fermera (pas de double comptage).
+func seedDataBaseline(st *store.Store, bl *baseline.Baseline) {
+	if len(bl.ExportState().Buckets) > 0 { // deja appris : ne pas ecraser
+		return
+	}
+	now := time.Now().UnixMilli()
+	upTo := now/3_600_000*3_600_000 - 3_600_000
+	rows := st.HourlyBytes(now-30*86_400_000, upTo)
+	if len(rows) == 0 {
+		return
+	}
+	for _, r := range rows {
+		if r.Bytes > 0 {
+			bl.Observe(r.Vhost, time.UnixMilli(r.HourMs), baseline.Metrics{Requests: r.Bytes})
+		}
+	}
+	bl.SetStartedAt(rows[0].HourMs)
+	st.SetState("data_baseline", bl.ExportState())
+	fmt.Printf("[baseline] data amorcee depuis l'historique : %d heures-vhost\n", len(rows))
+}

@@ -56,6 +56,7 @@ function initNotificationsDb() {
   try {
     const { DatabaseSync } = require('node:sqlite');
     db = new DatabaseSync(cfg.NOTIF_CENTER_DB_PATH);
+    try { db.exec('PRAGMA auto_vacuum = INCREMENTAL'); } catch {} // v12.74.0 (bases neuves)
     db.exec(`
       PRAGMA journal_mode = WAL;
 
@@ -71,6 +72,7 @@ function initNotificationsDb() {
       CREATE INDEX IF NOT EXISTS idx_notifications_ts ON notifications(ts);
     `);
     purgeOld();
+    require('./db-maintenance').register(db, 'notifications', cfg);
     console.log(`[notifications] DB ready: ${cfg.NOTIF_CENTER_DB_PATH} (retention: ${cfg.NOTIF_CENTER_RETENTION_DAYS}d)`);
   } catch (e) {
     console.warn('[notifications] SQLite unavailable — notification history will be in-memory only:', e.message);

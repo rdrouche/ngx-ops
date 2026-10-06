@@ -35,6 +35,7 @@ async function challengeLoad() {
   const d = await api('/challenge/status').catch(() => null);
   if (!d) return;
   challengeStatsLoad();
+  if (typeof challengeOffendersLoad === 'function') challengeOffendersLoad();
   const green = 'var(--green)', red = 'var(--red)', amber = 'var(--amber, #d98e04)';
   document.getElementById('ch-off').style.display = d.challengeEnabled ? 'none' : '';
 
@@ -127,6 +128,7 @@ async function challengeLoad() {
   chRow(set, t('challenge.resolver'), String(s.resolver));
   chRow(set, t('challenge.exemptPath'), String(s.exemptPathRegex || '—'));
   chRow(set, t('challenge.exemptUa'), String(s.exemptUaRegex || '—'));
+  if (d.paused) chRow(set, t('challenge.state'), t('challenge.paused'));
   if (d.engine === 'builtin') {
     chRow(set, t('challenge.difficulty'), String(s.difficultyBits));
     chRow(set, t('challenge.cookieHours'), String(s.cookieHours));
@@ -149,6 +151,7 @@ const CH_DOC_SECTIONS = [
   ['profiles', "profiles:\n  - name: forgejo\n    mode: allbots\n    exempt_ua_regex: '^forgejo-runner/'"],
   ['exempt', "challenge_exempt_ua_regex: '^NGXOps$'\nchallenge_exempt_path_regex: '^/(api/|[.]well-known/)'"],
   ['bots', null],
+  ['autoblock', "autoblock: true\nautoblock_threshold: 30          # échecs...\nautoblock_window_minutes: 60      # ...dans cette fenêtre\nautoblock_hours: 24               # durée du blocage\n\n# blocklists.yml\nsources:\n  - name: challenge-bans\n    type: challenge\n    action: deny_403"],
   ['difficulty', null],
   ['apply', null],
 ];

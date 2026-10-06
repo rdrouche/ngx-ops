@@ -26,6 +26,8 @@ const DEFAULTS = Object.freeze({
   enable: false, containerImage: '', secret: '',
   difficultyBits: 16, cookieHours: 24, goodbots: true, goodbotsExtra: '', language: 'auto',
   anubisDifficulty: 4, redirectDomains: '', cookieDomain: '',
+  // v12.73.0 : analyse des IP en echec et blocage automatique (moteur builtin)
+  autoblock: false, autoblockThreshold: 30, autoblockWindowMinutes: 60, autoblockHours: 24, offendersHours: 24,
 });
 
 function parseScalar(raw) {
@@ -78,6 +80,11 @@ function parseChallengeConfig(text) {
     if (!ok) errors.push('goodbots_extra : attendu nom|regex|.suffixe[,.suffixe][;nom2|…] (1000 caractères maximum)');
     else c.goodbotsExtra = v;
   }
+  bool('autoblock', 'autoblock');
+  int('autoblock_threshold', 'autoblockThreshold', 3, 100000);
+  int('autoblock_window_minutes', 'autoblockWindowMinutes', 1, 1440);
+  int('autoblock_hours', 'autoblockHours', 1, 720);
+  int('offenders_hours', 'offendersHours', 1, 168);
   int('anubis_difficulty', 'anubisDifficulty', 1, 8);
   str('redirect_domains', 'redirectDomains', DOMAINS_RE, 'liste de domaines séparés par des virgules');
   str('cookie_domain', 'cookieDomain', HOST_RE, 'nom de domaine invalide');
@@ -142,6 +149,9 @@ function buildContainerSpec({ engine, image, network, upstream, config, secret }
       `NC_COOKIE_HOURS=${config.cookieHours}`, `NC_LANG=${config.language}`, `NC_GOODBOTS=${config.goodbots ? 'true' : 'false'}`,
     ];
     if (config.goodbotsExtra) env.push(`NC_GOODBOTS_EXTRA=${config.goodbotsExtra}`);
+    env.push(`NC_AUTOBLOCK=${config.autoblock ? 'true' : 'false'}`, `NC_AUTOBLOCK_THRESHOLD=${config.autoblockThreshold}`,
+      `NC_AUTOBLOCK_WINDOW_MIN=${config.autoblockWindowMinutes}`, `NC_AUTOBLOCK_HOURS=${config.autoblockHours}`,
+      `NC_OFFENDERS_HOURS=${config.offendersHours}`);
   }
   return {
     Image: image,

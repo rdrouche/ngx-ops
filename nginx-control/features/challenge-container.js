@@ -39,6 +39,44 @@ const SECRET_STATE_KEY = 'challenge_container_secrets';
 
 function readFileOr(f, def = '') { try { return fs.readFileSync(f, 'utf8'); } catch { return def; } }
 
+/** Appel HTTP interne vers le conteneur builtin (reseau Docker ; ces routes refusent tout X-Real-IP). */
+function internalCall(path, method = 'GET', { json = true } = {}) {
+  const r = resolve();
+  if (r.engine !== 'builtin') return Promise.resolve({ unavailable: 'engine' });
+  const m = /^([a-z0-9][a-z0-9.-]*)(?::(\d{1,5}))?$/i.exec(String(r.upstream || ''));
+  if (!m) return Promise.resolve({ unavailable: 'upstream' });
+  return new Promise((resolveP) => {
+    const req = http.request({ host: m[1], port: m[2] || 80, path, method, timeout: 3000,
+      headers: { 'User-Agent': appCfg.HTTP_USER_AGENT } }, (up) => {
+      let buf = '';
+      up.on('data', d => { buf += d; if (buf.length > 2_000_000) up.destroy(); });
+      up.on('end', () => {
+        if (up.statusCode !== 200) return resolveP({ unavailable: 'unreachable' });
+        if (!json) return resolveP({ text: buf });
+        try { resolveP({ data: JSON.parse(buf) }); } catch { resolveP({ unavailable: 'unreachable' }); }
+      });
+    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolveP({ unavailable: 'unreachable' }));
+    req.end();
+  });
+}
+const internalJson = (path, method) => internalCall(path, method);
+
+/** Historique des blocages automatiques depuis le numero de sequence `since` (alertes Intelligence). */
+async function challengeBanEvents(since, limit = 100) {
+  const r = await internalCall(`/bans?since=${Math.max(0, parseInt(since, 10) || 0)}&limit=${Math.min(200, Math.max(1, limit | 0))}`);
+  if (r.unavailable) return { ok: false, error: r.unavailable };
+  return { ok: true, events: (r.data && r.data.events) || [], latest: r.data && r.data.latest != null ? r.data.latest : null };
+}
+
+/** IP bloquees automatiquement (source de blocklist `type: challenge`). */
+async function challengeListIps() {
+  const r = await internalCall('/blocklist', 'GET', { json: false });
+  if (r.unavailable) return { ok: false, error: r.unavailable === 'engine' ? 'moteur builtin requis' : 'conteneur challenge injoignable' };
+  return { ok: true, text: r.text };
+}
+
 /** Toute la configuration utile, relue à chaque appel (les fichiers sont éditables à chaud). */
 function resolve() {
   const parsed = CC.parseChallengeConfig(readFileOr(appCfg.CHALLENGE_CONFIG_FILE));
@@ -104,6 +142,11 @@ async function startContainer(r) {
   if (create.status !== 201) throw new Error(`Create failed: ${create.status} ${JSON.stringify(create.body)}`);
   const start = await dockerCall('POST', `/containers/${encodeURIComponent(r.name)}/start`);
   if (start.status !== 204 && start.status !== 304) throw new Error(`Start failed: ${start.status}`);
+  // v12.74.1 : le conteneur tourne -> fin de la pause, snippets nginx regeneres (actifs).
+  if (blocklists.isChallengePaused()) {
+    blocklists.setChallengePaused(false);
+    blocklists.applyChallengeFiles({ actor: 'challenge-start' }).catch(e => console.warn('[challenge] apply apres demarrage:', e.message));
+  }
   return true;
 }
 
@@ -138,7 +181,7 @@ function register(router) {
     const out = {
       enabled: r.config.enable, challengeEnabled: r.challengeEnabled, engine: r.engine,
       name: r.name, image: r.image, upstream: r.upstream, errors: r.errors,
-      configFile: appCfg.CHALLENGE_CONFIG_FILE,
+      configFile: appCfg.CHALLENGE_CONFIG_FILE, paused: blocklists.isChallengePaused(),
     };
     if (r.config.enable) out.container = await containerStatus(r.name);
     // v12.65.0 : vue complete de la page « Challenge HTTP »
@@ -162,23 +205,37 @@ function register(router) {
   // routee par nginx et refuse toute requete portant X-Real-IP).
   router.get('/api/challenge/stats', async ({ res, session, url }) => {
     if (!hasPerm(session, PERMS.VIEW_CONFIGS)) return httpLib.forbidden(res);
-    const r = resolve();
-    if (r.engine !== 'builtin') return send(res, 200, { available: false, reason: 'engine' });
     const hours = Math.min(Math.max(parseInt(url.searchParams.get('hours') || '24', 10) || 24, 1), 720);
-    const m = /^([a-z0-9][a-z0-9.-]*)(?::(\d{1,5}))?$/i.exec(String(r.upstream || ''));
-    if (!m) return send(res, 200, { available: false, reason: 'upstream' });
-    const data = await new Promise((resolveP) => {
-      const req = http.get({ host: m[1], port: m[2] || 80, path: `/stats?hours=${hours}`, timeout: 3000,
-        headers: { 'User-Agent': appCfg.HTTP_USER_AGENT } }, (up) => {
-        let buf = '';
-        up.on('data', d => { buf += d; if (buf.length > 2_000_000) up.destroy(); });
-        up.on('end', () => { try { resolveP(up.statusCode === 200 ? JSON.parse(buf) : null); } catch { resolveP(null); } });
-      });
-      req.on('timeout', () => req.destroy());
-      req.on('error', () => resolveP(null));
+    const r = await internalJson(`/stats?hours=${hours}`);
+    if (r.unavailable) return send(res, 200, { available: false, reason: r.unavailable });
+    return send(res, 200, { available: true, ...r.data });
+  });
+
+  // v12.73.0 : analyse des IP qui echouent au challenge + blocages automatiques actifs.
+  router.get('/api/challenge/offenders', async ({ res, session, url }) => {
+    if (!hasPerm(session, PERMS.VIEW_CONFIGS)) return httpLib.forbidden(res);
+    const q = new URLSearchParams({
+      hours: String(Math.min(Math.max(parseInt(url.searchParams.get('hours') || '24', 10) || 24, 1), 168)),
+      min: String(Math.min(Math.max(parseInt(url.searchParams.get('min') || '3', 10) || 3, 1), 100000)),
+      limit: String(Math.min(Math.max(parseInt(url.searchParams.get('limit') || '100', 10) || 100, 1), 500)),
+      neverSolved: url.searchParams.get('neverSolved') === '0' ? '0' : '1',
     });
-    if (!data) return send(res, 200, { available: false, reason: 'unreachable' });
-    return send(res, 200, { available: true, ...data });
+    const [o, b] = await Promise.all([internalJson(`/offenders?${q}`), internalJson('/bans')]);
+    if (o.unavailable) return send(res, 200, { available: false, reason: o.unavailable });
+    return send(res, 200, { available: true, ...o.data, bans: (b.data && b.data.bans) || [] });
+  });
+
+  // Leve un blocage automatique (le prochain cycle des blocklists retire l'IP de nginx).
+  router.post('/api/challenge/unban', async ({ req, res, session }) => {
+    if (!hasPerm(session, PERMS.DEPLOY)) return httpLib.forbidden(res);
+    const body = await httpLib.parseBody(req, { limitBytes: 1024 });
+    const ip = String(body.ip || '').trim();
+    if (!/^[0-9A-Fa-f:.]{2,45}$/.test(ip)) return httpLib.badRequest(res, 'invalid ip');
+    const r = await internalJson(`/unban?ip=${encodeURIComponent(ip)}`, 'POST');
+    if (r.unavailable) return send(res, 502, { error: r.unavailable });
+    logEvent('challenge.unban', `Blocage automatique leve pour ${ip}`, session.username);
+    blocklists.refreshBlocklists({ manual: false, analyzerOnly: true }).catch(() => {});
+    return send(res, 200, { ok: true, removed: !!(r.data && r.data.removed) });
   });
 
   // Regenere les fichiers nginx du challenge (independant de la blocklist).
@@ -209,8 +266,11 @@ function register(router) {
     const r = resolve();
     try {
       await stopContainer(r.name);
-      logEvent('challenge.stop', `challenge container ${r.name} stopped`, session.username);
-      return send(res, 200, { ok: true });
+      // v12.74.1 : snippets nginx vides + reload, sinon les vhosts protégés répondent 5xx (auth_request sans upstream).
+      blocklists.setChallengePaused(true);
+      const applied = await blocklists.applyChallengeFiles({ actor: session.username }).catch(e => ({ ok: false, error: e.message }));
+      logEvent('challenge.stop', `challenge container ${r.name} stopped; nginx snippets emptied (ok=${applied.ok})`, session.username);
+      return send(res, 200, { ok: true, nginx: applied });
     } catch (e) { return httpLib.serverError(res, e); }
   });
 
@@ -233,4 +293,4 @@ function register(router) {
   });
 }
 
-module.exports = { register, resolve, secretFor, startContainer, containerStatus, ensureContainerAtBoot };
+module.exports = { register, resolve, challengeListIps, challengeBanEvents, secretFor, startContainer, containerStatus, ensureContainerAtBoot };

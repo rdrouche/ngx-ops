@@ -25,12 +25,15 @@ const DEFAULTS = Object.freeze({
   batchSize: 100,
   timeoutSeconds: 10,
   // Les alertes volumétriques n'ont pas de sens hors de l'instance qui les a produites.
-  excludeRules: ['volumetric', 'country_traffic'],
+  excludeRules: ['volumetric', 'country_traffic', 'data_volume'],
   includeRules: [],
   minSeverity: 'low',
   shareUserAgents: true,
   sharePaths: true,
   shareVhost: false,
+  // v12.73.0 : blocages automatiques du challenge integre (IP qui echouent systematiquement). Opt-in :
+  // la plateforme doit connaitre le type d'alerte `challenge` (voir README / prompt-intelligence).
+  includeChallenge: false,
   backfillHours: 0,
   // Ping de connexion (POST /api/v1/ping) : intelligent, saute le ping si un lot vient de reussir.
   pingEnable: true,
@@ -40,7 +43,7 @@ const DEFAULTS = Object.freeze({
 
 // Cles reconnues de intelligence.yml ; `enabled` est un alias de `enable` (faute de frappe frequente).
 const KNOWN_KEYS = new Set(['enable', 'enabled', 'mode', 'api_url', 'user', 'token', 'interval_seconds', 'batch_size',
-  'timeout_seconds', 'exclude_rules', 'include_rules', 'min_severity', 'share_user_agents', 'share_paths', 'share_vhost', 'backfill_hours',
+  'timeout_seconds', 'exclude_rules', 'include_rules', 'min_severity', 'share_user_agents', 'share_paths', 'share_vhost', 'include_challenge', 'backfill_hours',
   'ping_enable', 'ping_interval_minutes', 'ping_url', 'url_ping']);
 
 const RULE_NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -147,6 +150,7 @@ function normalizeIntelSettings(text, env = {}) {
   s.shareUserAgents = bool(y.share_user_agents, DEFAULTS.shareUserAgents);
   s.sharePaths = bool(y.share_paths, DEFAULTS.sharePaths);
   s.shareVhost = bool(y.share_vhost, DEFAULTS.shareVhost);
+  s.includeChallenge = bool(y.include_challenge, DEFAULTS.includeChallenge);
   s.backfillHours = intIn(y.backfill_hours, 0, 0, 168);
   // Ping : active par defaut, toutes les 5 min (3 a 60). `ping_url` (alias `url_ping`) surcharge la
   // derivation automatique ; elle doit rester sur le MEME hote que api_url (le jeton ne part jamais ailleurs).

@@ -12,7 +12,7 @@ const crypto = require('crypto');
 const { SEVERITY_RANK } = require('./intel-settings');
 
 const SCHEMA = 1;
-const BUILTIN_RULES = new Set(['bruteforce', 'scan', 'flood', 'scraping', 'volumetric', 'country_traffic']);
+const BUILTIN_RULES = new Set(['bruteforce', 'scan', 'flood', 'scraping', 'volumetric', 'country_traffic', 'data_volume']);
 const MAX_PATHS = 10, MAX_UAS = 3, MAX_CAMPAIGN_IPS = 50, MAX_STR = 200;
 const BACKOFF_BASE_MS = 30_000, BACKOFF_MAX_MS = 3_600_000, RETRY_AFTER_MAX_MS = 86_400_000;
 
@@ -24,6 +24,8 @@ function ruleOf(a) {
   const type = String(a.type || '');
   // v12.70.0 : alertes du WAF émulé (score d'anomalie CRS cumulé par IP)
   if (type === 'waf') return { key: 'waf', kind: 'waf', id: null, name: 'waf' };
+  // v12.73.0 : blocage automatique d'une IP par le challenge integre (echecs repetes)
+  if (type === 'challenge') return { key: 'challenge', kind: 'challenge', id: null, name: 'challenge' };
   if (BUILTIN_RULES.has(type)) return { key: type, kind: 'builtin', id: null, name: type };
   const ev = a.evidence || {};
   return { key: 'custom', kind: 'custom', id: ev.ruleId != null ? ev.ruleId : null, name: str(ev.ruleName || type, 64) };
@@ -79,6 +81,18 @@ function shapeAlert(a, s) {
     };
     if (s.shareUserAgents) out.user_agents = (ev.userAgents || []).slice(0, MAX_UAS).map(u => str(u));
     if (s.sharePaths) out.paths = (ev.paths || []).slice(0, MAX_PATHS).map(p => str(p));
+    if (s.shareVhost && (a.vhost || ev.vhost)) out.vhost = str(a.vhost || ev.vhost, 253);
+    return out;
+  }
+  if (String(a.type || '') === 'challenge') {
+    out.challenge = {
+      attempts: Number(ev.requests) || 0,
+      redirected: Number(ev.redirected) || 0,
+      failed: Number(ev.failed) || 0,
+      rate_limited: Number(ev.rateLimited) || 0,
+      ban_hours: Number(ev.banHours) || 0,
+    };
+    if (s.shareUserAgents) out.user_agents = (ev.userAgents || []).slice(0, MAX_UAS).map(u => str(u));
     if (s.shareVhost && (a.vhost || ev.vhost)) out.vhost = str(a.vhost || ev.vhost, 253);
     return out;
   }

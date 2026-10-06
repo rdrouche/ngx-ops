@@ -155,6 +155,13 @@ sources:
   #   list: block
   #   action: drop_444      # optionnel : sinon block_action
   #   enable: true
+  #
+  # v12.73.0 — IP bloquées automatiquement par le challenge intégré (trop d'échecs, voir challenge.yml :
+  # autoblock*). Action deny_403 ou drop_444 (pas challenge : ces IP ont déjà échoué au challenge).
+  # - name: challenge-bans
+  #   type: challenge
+  #   action: deny_403
+  #   enable: true
 
 # Liste blanche (retour utilisateur v12.50.0 : "gerer une liste blanche par
 # exemple par d'ip privee donc soit CIDR ou juste une ip") — filet de

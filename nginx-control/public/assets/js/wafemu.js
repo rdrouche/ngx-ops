@@ -687,11 +687,34 @@ async function wfSaveVhosts(before, vhosts, msg) {
   WF.vhosts = null;
 }
 
+// ── Aide remediation (challenge vs block) ───────────────────────────────────
+async function wfHelpModal() {
+  const s = await wfFetchSettings().catch(() => null);
+  const th = (s && s.thresholds) || {}, lh = (s && s.listHours) || {};
+  const v = {
+    thc: th.challenge != null ? th.challenge : 10, thb: th.block != null ? th.block : 25,
+    lhc: lh.challenge != null ? lh.challenge : 24, lhb: lh.block != null ? lh.block : 72,
+    window: s && s.windowMinutes != null ? s.windowMinutes : 60,
+  };
+  const body = [];
+  const cur = wfEl('div', t('wafemu.help.current', v), 'nf-hint', 'margin:8px 0');
+  body.push(cur);
+  [['how', null], ['challenge', 'var(--amber)'], ['block', 'var(--red)'], ['limits', null], ['advice', null]].forEach(([k, color]) => {
+    const box = wfEl('div', null, null, 'margin:10px 0;padding-left:10px;' + (color ? 'border-left:3px solid ' + color : 'border-left:3px solid var(--border2)'));
+    box.appendChild(wfEl('div', t('wafemu.help.' + k + '.t', v), null, 'font-weight:600;margin-bottom:3px'));
+    box.appendChild(wfEl('div', t('wafemu.help.' + k + '.b', v), null, 'font-size:12px;color:var(--text2);line-height:1.6;white-space:pre-line'));
+    body.push(box);
+  });
+  wfModalOpen(t('wafemu.help.title'), body, [wfBtn(t('common.close'), wfModalClose)]);
+  const mb = wfGet('wf-modal-box'); if (mb) { mb.style.maxHeight = '85vh'; mb.style.overflowY = 'auto'; }
+}
+
 // ── Onglet Listes ────────────────────────────────────────────────────────────
 async function wfRenderLists(box) {
   const link = wfEl('a', t('wafemu.lists.openBlocklists'), null, 'font-size:12px;cursor:pointer');
   link.addEventListener('click', (e) => { e.preventDefault(); openPage('blocklists'); });
   box.appendChild(wfEl('div', t('wafemu.lists.help'), 'nf-hint', 'margin-bottom:4px'));
+  box.appendChild(wfBtn(t('wafemu.help.btn'), wfHelpModal)).style.marginBottom = '8px';
   box.appendChild(wfEl('div', null, null, 'margin-bottom:12px')).appendChild(link);
   for (const list of ['challenge', 'block']) {
     const d = await api('/waf/lists?list=' + list);

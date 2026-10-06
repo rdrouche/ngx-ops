@@ -31,7 +31,7 @@ func main() {
 		WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10,
 	}
 	go func() {
-		log.Printf("nginx-challenge à l'écoute sur %s (difficulté %d bits, cookie %s)", cfg.Bind, cfg.Bits, cfg.CookieTTL)
+		log.Printf("nginx-challenge à l'écoute sur %s (difficulté %d bits, cookie %s) — %s", cfg.Bind, cfg.Bits, cfg.CookieTTL, cfg.Offenders.Describe())
 		if err := hs.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}

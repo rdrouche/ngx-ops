@@ -60,6 +60,9 @@ func (a *App) StartBackgroundLoops(stop <-chan struct{}) {
 		a.Store.PurgeBlocklistHits(nowMs() - int64(a.Cfg.BlocklistRetentionDays)*86_400_000)
 	}, "rollup", stop)
 
+	// v12.74.0 : recupere l'espace libere par les purges, toutes les 6 h.
+	every(6*time.Hour, func() { a.Store.Maintain() }, "db-maintain", stop)
+
 	// Fix (audit ANA-07) : ferme les heures terminees sur son propre
 	// minuteur, independant du rythme d'arrivee des entrees.
 	every(5*time.Minute, func() {

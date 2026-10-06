@@ -34,6 +34,18 @@
 # language: auto                    # page de vérification : auto (navigateur, repli en) | fr | en
 # goodbots: true                    # laisser passer les bons robots (vérif. DNS inverse)
 # goodbots_extra: ""                # nom|regex-UA|.suffixe[,.suffixe][;nom2|…]
+#
+# ── analyse des IP en échec + blocage automatique (builtin, v12.73.0) ──────
+# Le conteneur suit, par IP, les redirections vers la vérification, les solutions fausses et les
+# limitations. Une IP qui n'a JAMAIS résolu le challenge et cumule `autoblock_threshold` échecs dans
+# `autoblock_window_minutes` est bloquée `autoblock_hours` heures (403 immédiat). Pour que nginx la
+# bloque aussi, ajouter dans blocklists.yml : sources: - name: challenge-bans / type: challenge /
+# action: deny_403. Réglages pris en compte à la (re)création du conteneur. Tableau : page Challenge.
+# autoblock: false                  # true pour activer le blocage (l'analyse reste active dans tous les cas)
+# autoblock_threshold: 30           # 3–100000 échecs...
+# autoblock_window_minutes: 60      # 1–1440 ... dans cette fenêtre
+# autoblock_hours: 24               # 1–720 : durée du blocage
+# offenders_hours: 24               # 1–168 : durée d'analyse conservée en mémoire
 # anubis_difficulty: 4              # 1–8 (anubis)
 # redirect_domains: ""              # anubis : domaines de redirection autorisés
 # cookie_domain: ""                 # anubis : domaine du cookie

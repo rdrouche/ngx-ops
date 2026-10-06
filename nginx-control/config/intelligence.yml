@@ -38,4 +38,6 @@
 # ping_interval_minutes: 5   # 3–60
 # ping_url: ""               # alias url_ping ; défaut dérivé de api_url (…/events -> …/ping), même hôte obligatoire
 #
+# include_challenge: false   # v12.73.0 : envoyer aussi les blocages automatiques du challenge intégré (type d'alerte « challenge » — la plateforme doit l'accepter)
+#
 # backfill_hours: 0          # 0 = seulement les alertes futures ; sinon rejouer les N dernières heures (max 168) au premier envoi

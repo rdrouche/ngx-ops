@@ -41,6 +41,7 @@ header{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:0 20px;
 .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:16px;letter-spacing:-.5px}
 .logo-icon{width:28px;height:28px;background:var(--accent);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .logo-icon svg{width:16px;height:16px;fill:none;stroke:#000;stroke-width:2.5;stroke-linecap:round}
+.logo-img{width:28px;height:28px;display:block;flex-shrink:0}
 .hbadge{font-family:monospace;font-size:10px;background:var(--accent-dim);color:var(--accent);padding:3px 8px;border-radius:4px;border:1px solid var(--accent-mid)}
 .hsp{flex:1}
 .spill{display:flex;align-items:center;gap:6px;font-family:monospace;font-size:11px;color:var(--text2)}

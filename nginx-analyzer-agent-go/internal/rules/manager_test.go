@@ -25,8 +25,8 @@ func TestCatalogSansThresholds(t *testing.T) {
 	t.Run("config: null pour chaque regle integree quand aucun threshold n est fourni", func(t *testing.T) {
 		rm := New(newFakeStore(), nil)
 		cat := rm.Catalog(detect.Explanations, Thresholds{})
-		if len(cat.Builtins) != 6 {
-			t.Fatalf("attendu 6 builtins, obtenu %d", len(cat.Builtins))
+		if len(cat.Builtins) != 7 {
+			t.Fatalf("attendu 7 builtins, obtenu %d", len(cat.Builtins))
 		}
 		for _, b := range cat.Builtins {
 			if b.Config != nil {

@@ -45,7 +45,25 @@ const TOGGLES = {
   webhooks:          { envVar: 'MENU_WEBHOOKS',          yamlKey: 'webhooks_menu',           default: 'auto', allowed: ['auto', 'show', 'hide'] },
   docker_autoconfig: { envVar: 'MENU_DOCKER_AUTOCONFIG', yamlKey: 'docker_autoconfig_menu',  default: 'auto', allowed: ['auto', 'show', 'hide'] },
   agents:            { envVar: 'MENU_AGENTS',            yamlKey: 'agents_menu',             default: 'auto', allowed: ['auto', 'show', 'hide'] },
+  // v12.72.0 (retour utilisateur) : entrees de menu supplementaires masquables
+  // (formulaire "Menu" de la page Systeme). Defaut "show" = comportement
+  // inchange. GoAccess garde sa logique existante ("auto" : affiche seulement
+  // si des sources sont configurees) ; "hide" le masque dans tous les cas.
+  sync:       { envVar: 'MENU_SYNC',       yamlKey: 'sync_menu',       default: 'show', allowed: ['show', 'hide'] },
+  vhostgen:   { envVar: 'MENU_VHOSTGEN',   yamlKey: 'vhostgen_menu',   default: 'show', allowed: ['show', 'hide'] },
+  graph:      { envVar: 'MENU_GRAPH',      yamlKey: 'graph_menu',      default: 'show', allowed: ['show', 'hide'] },
+  deploy:     { envVar: 'MENU_DEPLOY',     yamlKey: 'deploy_menu',     default: 'show', allowed: ['show', 'hide'] },
+  blocklists: { envVar: 'MENU_BLOCKLISTS', yamlKey: 'blocklists_menu', default: 'show', allowed: ['show', 'hide'] },
+  wafemu:     { envVar: 'MENU_WAFEMU',     yamlKey: 'wafemu_menu',     default: 'show', allowed: ['show', 'hide'] },
+  geomap:     { envVar: 'MENU_GEOMAP',     yamlKey: 'geomap_menu',     default: 'show', allowed: ['show', 'hide'] },
+  digest:     { envVar: 'MENU_DIGEST',     yamlKey: 'digest_menu',     default: 'show', allowed: ['show', 'hide'] },
+  cache:      { envVar: 'MENU_CACHE',      yamlKey: 'cache_menu',      default: 'show', allowed: ['show', 'hide'] },
+  notifications: { envVar: 'MENU_NOTIFICATIONS', yamlKey: 'notifications_menu', default: 'show', allowed: ['show', 'hide'] },
+  goaccess:   { envVar: 'MENU_GOACCESS',   yamlKey: 'goaccess_menu',   default: 'auto', allowed: ['auto', 'hide'] },
 };
+
+/** Cles ajoutees en v12.72.0 : resolution generique (visible = mode !== 'hide'). */
+const SIMPLE_TOGGLES = ['sync', 'vhostgen', 'graph', 'deploy', 'blocklists', 'wafemu', 'geomap', 'digest', 'cache', 'notifications', 'goaccess'];
 
 function loadMenuConfig() {
   if (!fs.existsSync(cfg.MENU_CONFIG_FILE)) return {};
@@ -157,7 +175,59 @@ async function resolveMenuVisibility(nginxImage) {
     webhooks: { visible: webhooksVisible, mode: webhooks.mode, source: webhooks.source },
     dockerAutoconfig: { visible: dockerAutoconfigVisible, mode: dockerAutoconfig.mode, source: dockerAutoconfig.source },
     agents:   { visible: agentsVisible, mode: agents.mode, source: agents.source },
+    ...Object.fromEntries(SIMPLE_TOGGLES.map(k => {
+      const r = resolveToggle(k);
+      return [k, { visible: r.mode !== 'hide', mode: r.mode, source: r.source }];
+    })),
   };
 }
 
-module.exports = { TOGGLES, loadMenuConfig, resolveToggle, looksWafCapable, readFeatureEnabled, resolveMenuVisibility };
+/**
+ * Etat des reglages pour le formulaire "Menu" (Systeme) : une ligne par
+ * entree avec la valeur ecrite dans menu.yml (ou le defaut), les valeurs
+ * permises et si une variable d'environnement l'impose (`locked`).
+ */
+function getMenuForm() {
+  const yamlCfg = loadMenuConfig();
+  return Object.entries(TOGGLES).map(([id, t]) => {
+    const r = resolveToggle(id);
+    const raw = String(yamlCfg[t.yamlKey] ?? '').trim().toLowerCase();
+    return {
+      id, yamlKey: t.yamlKey, envVar: t.envVar, allowed: t.allowed, default: t.default,
+      mode: r.mode,
+      yamlMode: t.allowed.includes(raw) ? raw : t.default,
+      locked: r.source === 'env',
+    };
+  });
+}
+
+/**
+ * Ecrit des reglages dans menu.yml. `values` : { <id>: '<mode>' }. Toute cle
+ * inconnue ou valeur hors liste est rejetee (jamais ecrite). Les lignes
+ * existantes sont remplacees en place (commentaires conserves), les cles
+ * absentes ajoutees en fin de fichier. Ecriture atomique (tmp + rename).
+ * @returns {{ok:true, written:string[]}|{ok:false, error:string}}
+ */
+function saveMenuForm(values) {
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return { ok: false, error: 'invalid body' };
+  for (const [id, mode] of Object.entries(values)) {
+    const t = Object.prototype.hasOwnProperty.call(TOGGLES, id) ? TOGGLES[id] : null;
+    if (!t) return { ok: false, error: `unknown menu item: ${id}` };
+    if (typeof mode !== 'string' || !t.allowed.includes(mode)) return { ok: false, error: `invalid value for ${id}` };
+  }
+  let text = fs.existsSync(cfg.MENU_CONFIG_FILE) ? fs.readFileSync(cfg.MENU_CONFIG_FILE, 'utf8') : '';
+  const written = [];
+  for (const [id, mode] of Object.entries(values)) {
+    const key = TOGGLES[id].yamlKey;
+    const re = new RegExp(`^${key}\\s*:.*$`, 'm');
+    if (re.test(text)) text = text.replace(re, () => `${key}: ${mode}`);
+    else text = text.replace(/\n*$/, '\n') + `${key}: ${mode}\n`;
+    written.push(key);
+  }
+  const tmp = `${cfg.MENU_CONFIG_FILE}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, text, { mode: 0o644 });
+  fs.renameSync(tmp, cfg.MENU_CONFIG_FILE);
+  return { ok: true, written };
+}
+
+module.exports = { TOGGLES, SIMPLE_TOGGLES, getMenuForm, saveMenuForm, loadMenuConfig, resolveToggle, looksWafCapable, readFeatureEnabled, resolveMenuVisibility };

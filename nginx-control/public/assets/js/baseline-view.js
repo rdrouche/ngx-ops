@@ -2,6 +2,9 @@
 // Vue lecture seule : resume par cle (vhost / pays) puis grille 7 x 24 du profil
 // appris (mediane par creneau, seuil d'alerte au survol). Rendu par textContent.
 let bvState = { type: 'vhost', key: null };
+const BV_TITLE = { vhost: 'baselineView.titleVhost', country: 'baselineView.titleCountry', data: 'baselineView.titleData' };
+// type 'data' : les valeurs sont des octets.
+const bvFmt = n => bvState.type === 'data' ? anFmtBytes(n) : Number(n).toLocaleString();
 const BV_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 function bvEl(tag, text, cls) {
@@ -18,10 +21,10 @@ function bvSlotLabel(how) {
 async function baselineViewOpen(type) {
   bvState = { type, key: null };
   document.getElementById('bv-overlay').style.display = '';
-  document.getElementById('bv-title').textContent = t(type === 'country' ? 'baselineView.titleCountry' : 'baselineView.titleVhost');
+  document.getElementById('bv-title').textContent = t(BV_TITLE[type] || BV_TITLE.vhost);
   document.getElementById('bv-th-key').textContent = t(type === 'country' ? 'baselineView.col.country' : 'baselineView.col.vhost');
   document.getElementById('bv-profile').textContent = '';
-  const s = await api('/analyzer/baseline' + (type === 'country' ? '/country' : '')).catch(() => null);
+  const s = await api('/analyzer/baseline' + (type === 'country' ? '/country' : type === 'data' ? '/data' : '')).catch(() => null);
   const note = document.getElementById('bv-note');
   note.textContent = '';
   if (s && s.reachable !== false) {
@@ -44,8 +47,8 @@ async function baselineViewOpen(type) {
     const tr = bvEl('tr'); tr.style.cursor = 'pointer';
     if (!k.relevant) tr.style.opacity = '.55';
     tr.appendChild(bvEl('td', k.key, 'ct-mono'));
-    tr.appendChild(bvEl('td', k.weeklyEstimate.toLocaleString()));
-    tr.appendChild(bvEl('td', k.peakPerHour.toLocaleString() + ' / h — ' + bvSlotLabel(k.peakHow)));
+    tr.appendChild(bvEl('td', bvFmt(k.weeklyEstimate)));
+    tr.appendChild(bvEl('td', bvFmt(k.peakPerHour) + ' / h — ' + bvSlotLabel(k.peakHow)));
     tr.appendChild(bvEl('td', k.usableSlots + ' / 168'));
     tr.appendChild(bvEl('td', String(k.samples) + (k.relevant ? '' : ' ' + t('baselineView.sporadic'))));
     tr.addEventListener('click', () => baselineViewProfile(k.key));
@@ -73,7 +76,7 @@ async function baselineViewProfile(key) {
       if (s.samples > 0 && s.usable) {
         c.style.background = 'var(--blue, #3b82f6)';
         c.style.opacity = String(Math.max(0.15, s.median / max).toFixed(2));
-        c.title = bvSlotLabel(d * 24 + h) + ' — ' + t('baselineView.tip.usable', { median: s.median, threshold: s.threshold, n: s.samples });
+        c.title = bvSlotLabel(d * 24 + h) + ' — ' + t('baselineView.tip.usable', { median: bvFmt(s.median), threshold: bvFmt(s.threshold), n: s.samples });
       } else if (s.samples > 0) {
         c.style.background = 'repeating-linear-gradient(45deg,var(--border),var(--border) 3px,transparent 3px,transparent 6px)';
         c.title = bvSlotLabel(d * 24 + h) + ' — ' + t('baselineView.tip.learning', { n: s.samples, min: p.minSamples });
@@ -84,7 +87,7 @@ async function baselineViewProfile(key) {
     }
   }
   box.appendChild(grid);
-  box.appendChild(bvEl('div', t('baselineView.legend', { sigma: p.sigma, min: p.minAbsoluteRequests }), 'ct-sub'));
+  box.appendChild(bvEl('div', t(bvState.type === 'data' ? 'baselineView.legendData' : 'baselineView.legend', { sigma: p.sigma, min: bvFmt(p.minAbsoluteRequests) }), 'ct-sub'));
 }
 
 function baselineViewClose() { document.getElementById('bv-overlay').style.display = 'none'; }

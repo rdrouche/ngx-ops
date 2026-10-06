@@ -36,6 +36,11 @@ CSP stricte sur la page.
 | `NC_RATE_PER_MIN` | `30` | Appels `/api/*` par IP et par minute |
 | `NC_GOODBOTS` | `true` | Autoriser les robots d'indexation vérifiés sur les vhosts « sauf bons robots » |
 | `NC_GOODBOTS_EXTRA` | — | Robots supplémentaires : `nom\|regex-UA\|.suffixe1,.suffixe2;nom2\|…` |
+| `NC_AUTOBLOCK` | `false` | Bloquer automatiquement les IP qui échouent systématiquement (voir ci-dessous) |
+| `NC_AUTOBLOCK_THRESHOLD` | `30` | Échecs déclenchant le blocage (3–100000) |
+| `NC_AUTOBLOCK_WINDOW_MIN` | `60` | Fenêtre de comptage des échecs, en minutes (1–1440) |
+| `NC_AUTOBLOCK_HOURS` | `24` | Durée du blocage (1–720 h) |
+| `NC_OFFENDERS_HOURS` | `24` | Historique par IP conservé en mémoire pour l'analyse (1–168 h) |
 
 Tous ces réglages ont un `ARG` dans le `Dockerfile` (`--build-arg`) et se surchargent à l'exécution.
 `NC_SECRET` n'a volontairement pas d'`ARG` (un secret de build reste lisible dans l'image).
@@ -48,6 +53,18 @@ Googlebot, Bingbot, Applebot, Yandex, Baidu, plus vos règles `NC_GOODBOTS_EXTRA
 jamais (il se falsifie). Résultats en cache (24 h / 15 min), recherches DNS limitées (2 s, 16 en parallèle).
 Les robots qui ne publient pas de DNS inverse (DuckDuckBot, facebookexternalhit…) ne sont pas reconnus :
 exemptez-les par adresse côté nginx si nécessaire.
+
+## IP en échec et blocage automatique (v12.73.0)
+
+Le service suit, **en mémoire** (jamais écrit sur disque, borné à 20 000 IP, effacé au redémarrage), les IP qui n'arrivent pas
+à passer le challenge. Une *tentative en échec* = redirection vers la vérification (401 du contrôle), solution fausse/expirée
+ou limitation de débit. Une IP qui a résolu le challenge au moins une fois n'est **jamais** bloquée (réseaux partagés / NAT) ;
+les bons robots vérifiés ne sont pas comptés.
+
+Avec `NC_AUTOBLOCK=true`, une IP qui cumule `NC_AUTOBLOCK_THRESHOLD` échecs dans `NC_AUTOBLOCK_WINDOW_MIN` minutes sans
+jamais résoudre est bloquée `NC_AUTOBLOCK_HOURS` heures : `/check` répond **403** immédiatement. Routes internes (refusent
+toute requête portant `X-Real-IP`) : `GET /offenders?hours=&min=&limit=&neverSolved=`, `GET /bans` (`?since=<seq>` pour
+l'historique des déclenchements), `GET /blocklist` (texte, une IP par ligne), `POST /unban?ip=`.
 
 ## Sécurité
 

@@ -125,6 +125,9 @@ func (a *App) trackStructure(entry parse.AccessEntry) {
 		},
 		func(m *vhostHourMetrics) {
 			m.Requests++
+			if entry.Bytes > 0 {
+				m.Bytes += entry.Bytes
+			}
 			if entry.Status >= 400 {
 				m.Errors++
 			}
@@ -219,8 +222,50 @@ func (a *App) flushHourlyBucket(hourMs int64, byVhost map[string]*vhostHourMetri
 			fmt.Printf("[alert] volumetric %s: %s\n", vhost, result.Summary)
 		}
 		a.Baseline.Observe(vhost, hourT, metrics)
+
+		// v12.74.0 - volume de donnees (octets envoyes) par vhost et par heure.
+		dm := baseline.Metrics{
+			Requests: m.Bytes, Errors: m.Errors,
+			DistinctIps: int64(len(m.IPs)), DistinctPaths: int64(len(m.Paths)),
+		}
+		dr := a.DataBaseline.Check(vhost, hourT, dm)
+		if dr != nil && dr.Anomaly && a.DataBaseline.Cfg().Enabled() &&
+			!a.Rules.RuleSuppressedForVhost(vhost, detect.RuleDataVolume) {
+			summary := dataSummary(dr, vhost)
+			a.Store.AddAlert(store.AlertInput{
+				Type: "data_volume", Severity: dr.Severity, Summary: summary,
+				Evidence: checkResultToEvidence(dr, map[string]any{
+					"vhost": vhost, "summary": summary, "unit": "bytes", "requests": m.Requests,
+				}),
+			})
+			fmt.Printf("[alert] data_volume %s: %s\n", vhost, summary)
+		}
+		a.DataBaseline.Observe(vhost, hourT, dm)
 	}
 	a.Store.SetState("baseline", a.Baseline.ExportState())
+	a.Store.SetState("data_baseline", a.DataBaseline.ExportState())
+}
+
+func fmtBytes(n int64) string {
+	u := []string{"o", "Ko", "Mo", "Go", "To"}
+	v := float64(n)
+	i := 0
+	for v >= 1024 && i < len(u)-1 {
+		v /= 1024
+		i++
+	}
+	if i == 0 {
+		return fmt.Sprintf("%d %s", int64(v), u[i])
+	}
+	if v >= 100 {
+		return fmt.Sprintf("%.0f %s", v, u[i])
+	}
+	return fmt.Sprintf("%.1f %s", v, u[i])
+}
+
+func dataSummary(r *baseline.CheckResult, vhost string) string {
+	return fmt.Sprintf("Volume de donnees anormal sur %s : %s envoyes en 1 h contre %s attendus (%.1f ecarts)",
+		vhost, fmtBytes(r.Observed), fmtBytes(r.Expected), r.Deviation)
 }
 
 // countrySummary replique countrySummary() : formulation dediee au pays

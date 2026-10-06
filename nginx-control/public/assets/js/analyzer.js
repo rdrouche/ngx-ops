@@ -176,6 +176,16 @@ async function anRefreshStatus() {
 
   anRenderBaseline(a && a.baseline, 'an-baseline-card', 'an-baseline');
   anRenderBaseline(a && a.countryBaseline, 'an-baseline-country-card', 'an-baseline-country');
+  anRenderBaseline(a && a.dataBaseline, 'an-baseline-data-card', 'an-baseline-data');
+  const row = document.getElementById('an-baseline-row');
+  if (row) row.style.display = (a && (a.baseline || a.countryBaseline || a.dataBaseline)) ? 'grid' : 'none';
+}
+
+/** Octets -> libelle lisible (Ko/Mo/Go...). */
+function anFmtBytes(n) {
+  const u = ['o', 'Ko', 'Mo', 'Go', 'To']; let i = 0; let v = Number(n) || 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? String(Math.round(v)) : v.toFixed(v >= 100 ? 0 : 1)) + ' ' + u[i];
 }
 
 function anRenderBaseline(b, cardId, boxId) {
@@ -260,7 +270,7 @@ async function analyzerImageUpdate() {
 const AN_TYPE_LABEL = () => ({
   bruteforce: t('analyzer.type.bruteforce'), scan: t('analyzer.type.scan'), flood: t('analyzer.type.flood'),
   scraping: t('analyzer.type.scraping'), volumetric: t('analyzer.type.volumetric'),
-  country_traffic: t('analyzer.type.countryTraffic'),
+  country_traffic: t('analyzer.type.countryTraffic'), data_volume: t('analyzer.type.dataVolume'),
 });
 const AN_SEV_BADGE = { high: 'rd', medium: 'am', low: 'gy' };
 
@@ -697,6 +707,7 @@ const RULES_META = {
   scraping:        { name: () => t('analyzer.rules.name.scraping')        || 'Aspiration de contenu',        severity: 'low'   },
   volumetric:      { name: () => t('analyzer.rules.name.volumetric')      || 'Anomalie volumetrique (vhost)',severity: null    },
   country_traffic: { name: () => t('analyzer.rules.name.countryTraffic')  || 'Anomalie volumetrique (pays)', severity: null    },
+  data_volume:     { name: () => t('analyzer.rules.name.dataVolume')      || 'Anomalie de volume de donnees (vhost)', severity: null },
 };
 const RULES_SEVERITY_LABEL = {
   high:   () => t('analyzer.rules.sevHigh')   || 'Haute',
@@ -718,6 +729,7 @@ const RULES_CONFIG_FIELD = {
   maxDistinct:             { label: () => t('analyzer.rules.cfg.maxDistinct')  || 'Chemins distincts max.',   fmt: v => `${v}` },
   learningDays:            { label: () => t('analyzer.rules.cfg.learningDays') || 'Apprentissage',            fmt: v => `${v} j` },
   sigmaThreshold:          { label: () => t('analyzer.rules.cfg.sigma')        || 'Seuil (ecarts-type)',      fmt: v => `${v}` },
+  minAbsoluteBytes:        { label: () => t('analyzer.rules.cfg.minAbsoluteBytes') || 'Volume min. absolu',    fmt: v => anFmtBytes(v) },
   minAbsoluteRequests:     { label: () => t('analyzer.rules.cfg.minAbsolute')  || 'Volume min. absolu',       fmt: v => `${v}` },
 };
 

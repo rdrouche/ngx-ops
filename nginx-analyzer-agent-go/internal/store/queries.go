@@ -332,3 +332,41 @@ func (s *Store) Series(grain string, fromMs, toMs int64, vhost string) []SeriesP
 	}
 	return out
 }
+
+// HourBytes : octets envoyes par un vhost sur une heure (amorcage de la baseline data).
+type HourBytes struct {
+	HourMs int64
+	Vhost  string
+	Bytes  int64
+}
+
+// HourlyBytes : octets par vhost et par heure (grains minute + hour, sans chevauchement :
+// le rollup supprime les minutes une fois agregees). Parite : Store.hourlyBytes() cote Node.
+func (s *Store) HourlyBytes(fromMs, toMs int64) []HourBytes {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
+		return nil
+	}
+	rows, err := s.db.Query(`
+		SELECT (bucket / 3600) * 3600 AS hour, vhost, SUM(bytes) AS bytes
+		FROM traffic
+		WHERE grain IN ('minute', 'hour') AND bucket >= ? AND bucket < ?
+		GROUP BY (bucket / 3600), vhost
+		ORDER BY hour
+	`, floorDiv1000(fromMs), floorDiv1000(toMs))
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []HourBytes
+	for rows.Next() {
+		var h HourBytes
+		if err := rows.Scan(&h.HourMs, &h.Vhost, &h.Bytes); err != nil {
+			continue
+		}
+		h.HourMs *= 1000
+		out = append(out, h)
+	}
+	return out
+}

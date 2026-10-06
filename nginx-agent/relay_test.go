@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -158,4 +159,96 @@ func waitListening(t *testing.T, addr string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("rien n ecoute sur %s apres le delai d attente", addr)
+}
+
+// v12.72.0 — WebSocket (Upgrade) a travers le relais : le backend local accepte un
+// upgrade (101 Switching Protocols) puis fait ecrire en echo ; le client passe par le
+// relais HTTP puis HTTPS, avec les en-tetes que nginx envoie (Upgrade + Connection).
+func TestRelay_WebSocketUpgrade_Echo(t *testing.T) {
+	setLocalRoutes(vhostsAsEntries([]VhostSpec{
+		{ServerName: "ws-test.example.com", Mode: "relay", Locations: []LocationSpec{
+			{Path: "/", Target: "http://127.0.0.1:19291"},
+		}},
+	}, nil))
+	t.Cleanup(func() { setLocalRoutes(nil) })
+
+	backend := &http.Server{Addr: "127.0.0.1:19291", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Upgrade") != "websocket" {
+			http.Error(w, "upgrade attendu", http.StatusBadRequest)
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "hijack impossible", 500)
+			return
+		}
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+		_ = rw.Flush()
+		buf := make([]byte, 64)
+		for {
+			n, err := rw.Read(buf)
+			if n > 0 {
+				_, _ = rw.Write(buf[:n])
+				_ = rw.Flush()
+			}
+			if err != nil {
+				return
+			}
+		}
+	})}
+	go backend.ListenAndServe()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = backend.Shutdown(ctx)
+	})
+	waitListening(t, "127.0.0.1:19291")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	startRelay(ctx, "127.0.0.1:19292", "127.0.0.1:19293", "", "", false)
+	waitListening(t, "127.0.0.1:19292")
+	waitListening(t, "127.0.0.1:19293")
+
+	for _, tc := range []struct {
+		name string
+		dial func() (net.Conn, error)
+	}{
+		{"http", func() (net.Conn, error) { return net.Dial("tcp", "127.0.0.1:19292") }},
+		{"https", func() (net.Conn, error) {
+			return tls.Dial("tcp", "127.0.0.1:19293", &tls.Config{InsecureSkipVerify: true})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, err := tc.dial()
+			if err != nil {
+				t.Fatalf("connexion au relais : %v", err)
+			}
+			defer conn.Close()
+			_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+			_, _ = conn.Write([]byte("GET /socket HTTP/1.1\r\nHost: ws-test.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+				"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"))
+			head := make([]byte, 0, 256)
+			one := make([]byte, 1)
+			for !strings.HasSuffix(string(head), "\r\n\r\n") {
+				if _, err := conn.Read(one); err != nil {
+					t.Fatalf("lecture de la reponse d'upgrade : %v (recu %q)", err, head)
+				}
+				head = append(head, one[0])
+			}
+			if !strings.HasPrefix(string(head), "HTTP/1.1 101") {
+				t.Fatalf("101 attendu, recu %q", head)
+			}
+			_, _ = conn.Write([]byte("ping-ws"))
+			echo := make([]byte, 7)
+			if _, err := io.ReadFull(conn, echo); err != nil || string(echo) != "ping-ws" {
+				t.Fatalf("echo bidirectionnel attendu, recu %q (%v)", echo, err)
+			}
+		})
+	}
 }

@@ -574,6 +574,10 @@ func NewHandler(a *app.App) http.Handler {
 					LearningDays: a.Baseline.Cfg().LearningDays, SigmaThreshold: a.Baseline.Cfg().SigmaThreshold,
 					MinAbsoluteRequests: a.Baseline.Cfg().MinAbsoluteRequests,
 				},
+				DataVolume: &rules.VolumetricThresholds{
+					LearningDays: a.DataBaseline.Cfg().LearningDays, SigmaThreshold: a.DataBaseline.Cfg().SigmaThreshold,
+					MinAbsoluteRequests: a.DataBaseline.Cfg().MinAbsoluteRequests,
+				},
 				CountryTraffic: &rules.VolumetricThresholds{
 					LearningDays: a.CountryBaseline.Cfg().LearningDays, SigmaThreshold: a.CountryBaseline.Cfg().SigmaThreshold,
 					MinAbsoluteRequests: a.CountryBaseline.Cfg().MinAbsoluteRequests,
@@ -596,6 +600,8 @@ func NewHandler(a *app.App) http.Handler {
 				a.Baseline.SetEnabled(enable)
 			case "country_traffic":
 				a.CountryBaseline.SetEnabled(enable)
+			case "data_volume":
+				a.DataBaseline.SetEnabled(enable)
 			}
 			send(w, 200, map[string]any{"ok": true, "key": key, "enabled": enable})
 			return
@@ -714,23 +720,20 @@ func NewHandler(a *app.App) http.Handler {
 			return
 
 		case p == "/api/baseline/keys":
-			bl := a.Baseline
-			if r.URL.Query().Get("type") == "country" {
-				bl = a.CountryBaseline
-			}
+			bl := baselineByType(a, r.URL.Query().Get("type"))
 			send(w, 200, map[string]any{"keys": bl.KeysSummary(100)})
 			return
 		case p == "/api/baseline/profile":
-			bl := a.Baseline
-			if r.URL.Query().Get("type") == "country" {
-				bl = a.CountryBaseline
-			}
+			bl := baselineByType(a, r.URL.Query().Get("type"))
 			k := r.URL.Query().Get("key")
 			if k == "" || len(k) > 253 {
 				send(w, 400, map[string]any{"error": "key required"})
 				return
 			}
 			send(w, 200, bl.Profile(k))
+			return
+		case p == "/api/baseline/data":
+			send(w, 200, baselineStatsJSON(a.DataBaseline.Stats()))
 			return
 		case p == "/api/baseline/country":
 			send(w, 200, baselineStatsJSON(a.CountryBaseline.Stats()))
@@ -831,6 +834,17 @@ func NewHandler(a *app.App) http.Handler {
 			send(w, 200, map[string]any{"ok": true})
 			return
 
+		case p == "/api/baseline/data/exclude" && r.Method == http.MethodPost:
+			vhost, hour := q.Get("vhost"), q.Get("hour")
+			if vhost == "" || hour == "" {
+				send(w, 400, map[string]any{"error": "vhost and hour required"})
+				return
+			}
+			a.DataBaseline.Exclude(vhost, hour)
+			a.Store.SetState("data_baseline", a.DataBaseline.ExportState())
+			send(w, 200, map[string]any{"ok": true})
+			return
+
 		case p == "/api/baseline/country/exclude" && r.Method == http.MethodPost:
 			country, hour := q.Get("country"), q.Get("hour")
 			if country == "" || hour == "" {
@@ -865,6 +879,7 @@ func handleStatus(w http.ResponseWriter, a *app.App) {
 			"logsDir": a.Cfg.LogsDir, "dbPath": a.Cfg.DBPath,
 			"learningDays": a.Cfg.LearningDays, "sigma": a.Cfg.SigmaThresh,
 			"countrySigma": a.Cfg.CountrySigmaThreshold, "countryMinRequests": a.Cfg.CountryMinRequests,
+			"dataSigma": a.Cfg.DataSigmaThreshold, "dataMinBytes": a.Cfg.DataMinBytes,
 		},
 		"tail":                    tailStatusJSON(tailStats, tailFollowing),
 		"wafTail":                 tailStatusJSON(wafStats, wafFollowing),
@@ -876,6 +891,7 @@ func handleStatus(w http.ResponseWriter, a *app.App) {
 		"detector":                detectorStatsJSON(a.Detector.Stats()),
 		"baseline":                baselineStatsJSON(a.Baseline.Stats()),
 		"countryBaseline":         baselineStatsJSON(a.CountryBaseline.Stats()),
+		"dataBaseline":            baselineStatsJSON(a.DataBaseline.Stats()),
 		"store":                   storeStatsJSON(a.Store.Stats()),
 		"geoip":                   geoipStatusJSON(geoip.Status()),
 		"memoryMb":                memoryMB(),
@@ -910,6 +926,7 @@ func storeStatsJSON(s store.Stats) map[string]any {
 		m["rows"] = s.Rows
 		m["alerts"] = s.Alerts
 		m["dbBytes"] = s.DBBytes
+		m["dbFreeBytes"] = s.DBFreeBytes
 	}
 	return m
 }
@@ -1097,4 +1114,15 @@ func remediationTypeFromBody(body map[string]any) string {
 		return s
 	}
 	return "invalide"
+}
+
+// baselineByType : "country" | "data" | defaut (vhost).
+func baselineByType(a *app.App, t string) *baseline.Baseline {
+	switch t {
+	case "country":
+		return a.CountryBaseline
+	case "data":
+		return a.DataBaseline
+	}
+	return a.Baseline
 }

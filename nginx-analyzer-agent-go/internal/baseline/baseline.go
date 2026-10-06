@@ -580,6 +580,13 @@ func (b *Baseline) SetEnabled(enable bool) {
 
 // Observe : version thread-safe (tailer, boucles de fond et handlers HTTP
 // y accedent depuis des goroutines distinctes).
+// SetStartedAt fixe le debut d'apprentissage (amorcage depuis l'historique stocke).
+func (b *Baseline) SetStartedAt(ms int64) {
+	b.mu.Lock()
+	b.startedAt = ms
+	b.mu.Unlock()
+}
+
 func (b *Baseline) Observe(vhost string, t time.Time, metrics Metrics) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

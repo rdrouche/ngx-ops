@@ -99,6 +99,7 @@ const RULE_IDS = {
   scraping: 4,
   volumetric: 5,
   country_traffic: 6,
+  data_volume: 7,
 };
 
 const EXPLANATIONS = {
@@ -143,6 +144,13 @@ const EXPLANATIONS = {
     why:  "Un pays qui envoie brutalement beaucoup plus de trafic qu a l accoutumee est le motif d une attaque distribuee (credential stuffing, DDoS applicatif) menee depuis une plage d adresses concentree geographiquement, ou d un scan de masse.",
     legit: "Une actualite qui touche particulierement ce pays, une campagne marketing ciblee, ou un evenement (sportif, commercial) genèrent le meme pic sans etre malveillants — la encore, la structure (nombre d adresses distinctes, variete des chemins, taux d erreur) les distingue d un flood.",
     action: "Regarder le champ « structure » de l alerte et, si besoin, le detail par vhost sur la carte en direct filtree par ce pays. Si le trafic est legitime, marquez ce creneau comme normal.",
+  },
+  data_volume: {
+    id: RULE_IDS.data_volume,
+    what: "La quantite de donnees envoyees aux clients par un vhost sur une heure s ecarte nettement de ce qui est habituel pour ce meme creneau de la semaine.",
+    why:  "Une exfiltration (dump de base, archive telechargee apres exploitation d une faille), un telechargement massif ou un scraping de fichiers lourds se voient dans le volume de donnees meme quand le nombre de requetes reste normal.",
+    legit: "Une nouvelle release, une video ou un gros fichier partage, une sauvegarde ou une synchronisation (Nextcloud, registry Docker) produisent le meme pic sans etre malveillants. Seul le sens sortant (body_bytes_sent) est mesure : le trafic entrant exigerait $request_length dans le format de log.",
+    action: "Regarder quels chemins et quelles adresses pesent le plus sur ce vhost a cette heure (Logs, page Analyse). Si le pic est legitime, marquez ce creneau comme normal pour qu il n influence pas la reference.",
   },
 };
 

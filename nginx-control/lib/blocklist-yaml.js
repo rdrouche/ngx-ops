@@ -128,7 +128,8 @@ function parseBlocklistYaml(text) {
 }
 
 const NAME_RE = /^[A-Za-z0-9_-]+$/;
-const SOURCE_TYPES = new Set(['url', 'analyzer', 'waf']);
+// v12.73.0 : `challenge` = IP bloquees automatiquement par le challenge integre (trop d echecs).
+const SOURCE_TYPES = new Set(['url', 'analyzer', 'waf', 'challenge']);
 // Liste du WAF emule (type: waf) : `block` (IP a refuser) ou `challenge` (IP soumises au challenge navigateur).
 const WAF_LISTS = new Set(['block', 'challenge']);
 // Action propre a une liste (v12.69.0) : surcharge block_action pour cette source seulement.
@@ -163,7 +164,7 @@ function validateSource(s, seenNames) {
   }
   const type = s.type && SOURCE_TYPES.has(s.type) ? s.type : 'url';
   if (s.type && !SOURCE_TYPES.has(s.type)) {
-    errs.push(`${label} : "type" invalide ("${s.type}") — valeurs acceptees : url, analyzer, waf`);
+    errs.push(`${label} : "type" invalide ("${s.type}") — valeurs acceptees : url, analyzer, waf, challenge`);
   }
   if (type === 'url') {
     if (!s.url || typeof s.url !== 'string' || !/^https?:\/\/.+/i.test(s.url)) {
@@ -181,6 +182,10 @@ function validateSource(s, seenNames) {
     }
   } else if (s.list != null) {
     errs.push(`${label} : "list" n'est applicable qu'a une source de type waf`);
+  }
+  if (type === 'challenge') {
+    if (s.url != null) errs.push(`${label} : "url" n'est pas applicable a une source challenge (les IP viennent du conteneur nginx-challenge)`);
+    if (s.action === 'challenge') errs.push(`${label} : action: challenge n'a pas de sens ici (ces IP ont deja echoue au challenge) — utilisez deny_403 ou drop_444`);
   }
   if (s.action != null && !SOURCE_ACTIONS.has(s.action)) {
     errs.push(`${label} : "action" invalide ("${s.action}") — valeurs acceptees : deny_403, drop_444, challenge`);
@@ -231,8 +236,10 @@ function parseAndValidate(text, challengeOverrides) {
   for (const s of sources) {
     const srcErrors = validateSource(s, seenNames);
     if (srcErrors.length) { errors.push(...srcErrors); continue; }
-    const type = s.type === 'analyzer' ? 'analyzer' : s.type === 'waf' ? 'waf' : 'url';
-    if (type === 'waf') {
+    const type = s.type === 'analyzer' ? 'analyzer' : s.type === 'waf' ? 'waf' : s.type === 'challenge' ? 'challenge' : 'url';
+    if (type === 'challenge') {
+      valid.push({ name: s.name, type, enable: s.enable !== false, action: s.action || null });
+    } else if (type === 'waf') {
       valid.push({ name: s.name, type, list: s.list, enable: s.enable !== false, action: s.list === 'challenge' ? 'challenge' : (s.action || null) });
     } else if (type === 'url') {
       valid.push({ name: s.name, type, url: s.url, enable: s.enable !== false, action: s.action || null });

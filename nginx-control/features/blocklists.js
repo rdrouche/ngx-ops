@@ -121,7 +121,21 @@ function loadConfig() {
   let text = '';
   try { text = fs.readFileSync(BLOCKLIST_CONFIG_FILE, 'utf8'); } catch { /* missing = disabled, defaults apply */ }
   // challenge.yml (page « Challenge HTTP ») l emporte sur les cles challenge_* de blocklists.yml
-  return { text, ...parseAndValidate(text, readChallengeOverrides(cfg.CHALLENGE_CONFIG_FILE)) };
+  const parsed = parseAndValidate(text, readChallengeOverrides(cfg.CHALLENGE_CONFIG_FILE));
+  // v12.74.1 : conteneur du challenge arrete depuis la page -> snippets neutres (sinon auth_request vers
+  // un upstream absent = erreurs 5xx sur les vhosts proteges). Levee au (re)demarrage du conteneur.
+  if (isChallengePaused()) parsed.settings.challenge = { ...parsed.settings.challenge, enable: false };
+  return { text, ...parsed };
+}
+
+// ─── Pause du challenge (conteneur arrete volontairement) ────────────────────
+const CHALLENGE_PAUSE_FILE = path.join(path.dirname(cfg.CHALLENGE_CONFIG_FILE), '.challenge-paused');
+function isChallengePaused() { try { return fs.existsSync(CHALLENGE_PAUSE_FILE); } catch { return false; } }
+function setChallengePaused(on) {
+  try {
+    if (on) fs.writeFileSync(CHALLENGE_PAUSE_FILE, new Date().toISOString() + '\n', { mode: 0o600 });
+    else fs.rmSync(CHALLENGE_PAUSE_FILE, { force: true });
+  } catch (e) { console.warn('[challenge] pause flag:', e.message); }
 }
 
 function loadCache() {
@@ -326,7 +340,7 @@ async function refreshBlocklistsNow({ manual = false, actor = 'scheduler', analy
     // analyzerOnly : cycle frequent limite aux sources LOCALES ("analyzer" et "waf" :
     // aucun telechargement externe) ; les autres sources gardent leur cache (et restent
     // fusionnees plus bas), elles ne sont retelechargees qu'au cron general (interval_cron).
-    if (analyzerOnly && source.type !== 'analyzer' && source.type !== 'waf') continue;
+    if (analyzerOnly && source.type !== 'analyzer' && source.type !== 'waf' && source.type !== 'challenge') continue;
     const prevEntry = cache.sources[source.name] || {};
 
     // Source "analyzer" (retour utilisateur, v12.49.4, redesign v12.50.0) :
@@ -422,6 +436,37 @@ async function refreshBlocklistsNow({ manual = false, actor = 'scheduler', analy
         const error = (wr && wr.error) || 'WAF injoignable';
         cache.sources[source.name] = { ...prevEntry, type: 'waf', list: source.list, lastAttemptAt: now, lastError: error };
         attempted.push({ name: source.name, ok: false, type: 'waf', error, cachedCount: prevEntry.count || 0 });
+      }
+      continue;
+    }
+
+    // Source "challenge" (v12.73.0) : IP bloquees automatiquement par le challenge integre
+    // (X echecs dans la fenetre -> blocage Y heures). Meme modele que "waf" : texte brut lu sur
+    // le reseau Docker, lignes validees, derniere liste conservee si le conteneur est injoignable.
+    if (source.type === 'challenge') {
+      let cr;
+      try { cr = challengeListIps ? await challengeListIps() : { ok: false, error: 'challenge non disponible' }; }
+      catch (e) { cr = { ok: false, error: e.message || String(e) }; }
+      if (cr && cr.ok) {
+        const parsed = parseIpLines(cr.text);
+        const ips = parsed.valid.filter(ip => {
+          const hit = whitelist.some(w => ipInCidr(ip, w));
+          if (hit) wlRemovedAtSource.add(ip);
+          return !hit;
+        });
+        try {
+          blocklistHistory.record(blocklistHistory.diffAnalyzer({ source: source.name, prevIps: prevEntry.ips || [], newIps: ips }));
+        } catch (e) { console.warn('[blocklists] history:', e.message); }
+        cache.sources[source.name] = {
+          type: 'challenge', ips, count: ips.length,
+          invalidCount: parsed.invalidCount, totalLines: parsed.totalLines,
+          lastSuccessAt: now, lastAttemptAt: now, lastError: null,
+        };
+        attempted.push({ name: source.name, ok: true, type: 'challenge', count: ips.length });
+      } else {
+        const error = (cr && cr.error) || 'challenge injoignable';
+        cache.sources[source.name] = { ...prevEntry, type: 'challenge', lastAttemptAt: now, lastError: error };
+        attempted.push({ name: source.name, ok: false, type: 'challenge', error, cachedCount: prevEntry.count || 0 });
       }
       continue;
     }
@@ -668,7 +713,10 @@ let buildVhostRulesMap = null;
 // wafListIps(list) -> Promise<{ok:true,text}|{ok:false,error}> : IP d'une liste du WAF emule
 // (features/waf.js), pour les sources `type: waf`.
 let wafListIps = null;
-function setDeps({ analyzerApi: a, analyzerApiJson: aj, buildVhostRulesMap: bvrm, wafListIps: wl } = {}) {
+// challengeListIps() -> Promise<{ok:true,text}|{ok:false,error}> : IP bloquees par le challenge integre (sources `type: challenge`).
+let challengeListIps = null;
+function setDeps({ analyzerApi: a, analyzerApiJson: aj, buildVhostRulesMap: bvrm, wafListIps: wl, challengeListIps: cl } = {}) {
+  if (cl === null || typeof cl === 'function') challengeListIps = cl;
   if (typeof a === 'function') analyzerApi = a;
   if (typeof aj === 'function') analyzerApiJson = aj;
   if (typeof bvrm === 'function') buildVhostRulesMap = bvrm;
@@ -1123,8 +1171,9 @@ function getExportableIps(sourceName, { includeDetected = false } = {}) {
 
   const isAnalyzer = norm?.type === 'analyzer' || entry?.type === 'analyzer';
   const isWaf = norm?.type === 'waf' || entry?.type === 'waf';
+  const isChallenge = norm?.type === 'challenge' || entry?.type === 'challenge';
   const raw = (includeDetected && isAnalyzer) ? (entry?.detectedIps || []) : (entry?.ips || []);
-  return { ok: true, source: name, type: isAnalyzer ? 'analyzer' : isWaf ? 'waf' : 'url', ips: [...raw].sort() };
+  return { ok: true, source: name, type: isAnalyzer ? 'analyzer' : isWaf ? 'waf' : isChallenge ? 'challenge' : 'url', ips: [...raw].sort() };
 }
 
 // ─── Hit stats (Digest + effectiveness) ──────────────────────────────────────
@@ -1264,9 +1313,10 @@ function getBlocklistStatus() {
     const norm  = validByName.get(s.name);
     const isAnalyzer = norm?.type === 'analyzer' || entry?.type === 'analyzer';
     const isWaf = !isAnalyzer && (norm?.type === 'waf' || s.type === 'waf' || entry?.type === 'waf');
+    const isChallenge = !isAnalyzer && !isWaf && (norm?.type === 'challenge' || s.type === 'challenge' || entry?.type === 'challenge');
     return {
-      name: s.name, type: isAnalyzer ? 'analyzer' : isWaf ? 'waf' : 'url',
-      url: (isAnalyzer || isWaf) ? undefined : s.url,
+      name: s.name, type: isAnalyzer ? 'analyzer' : isWaf ? 'waf' : isChallenge ? 'challenge' : 'url',
+      url: (isAnalyzer || isWaf || isChallenge) ? undefined : s.url,
       ...(isWaf ? { list: norm?.list || s.list || entry?.list || null } : {}),
       enable: s.enable !== false, action: norm?.action || null,
       count: entry?.count ?? 0, invalidCount: entry?.invalidCount ?? 0,
@@ -1371,7 +1421,7 @@ function startBlocklistScheduler() {
     // dont la fenetre de regle est plus courte que interval_cron (6 h) serait
     // manquee ou appliquee des heures trop tard.
     // (la source "waf" suit la meme cadence : liste locale au reseau Docker, durees courtes.)
-    if (!valid.some(src => src.enable && (src.type === 'analyzer' || src.type === 'waf'))) return;
+    if (!valid.some(src => src.enable && (src.type === 'analyzer' || src.type === 'waf' || src.type === 'challenge'))) return;
     if (minuteKey === lastFiredAnalyzerMinute || !matchCron(settings.analyzerIntervalCron, now)) return;
     lastFiredAnalyzerMinute = minuteKey;
     refreshBlocklists({ manual: false, analyzerOnly: true }).catch(e => console.error('[blocklists] analyzer refresh error:', e.message));
@@ -1499,7 +1549,7 @@ function register(router) {
 
 module.exports = {
   register, setDeps, ensureSnippetsAtBoot, refreshBlocklists, unblockAnalyzerIp, getBlocklistStatus, startBlocklistScheduler,
-  computeChallengeFiles, getChallengeFilesState, applyChallengeFiles, reconcileDisabled,
+  computeChallengeFiles, getChallengeFilesState, applyChallengeFiles, reconcileDisabled, isChallengePaused, setChallengePaused,
   checkIp, explainWafIps, getHitStats, getDigestStats, pushBlocklistSources, getExportableIps,
   // consumed by server.js to wire into features/deploy.js's setDeps()
   GENERATED_FILES, getGeneratedFiles,

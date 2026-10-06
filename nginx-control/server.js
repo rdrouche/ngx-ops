@@ -119,7 +119,7 @@ const STATIC_ASSETS_DIR = path.join(__dirname, 'public', 'assets');
 // CHANGELOG for why: those hosts were never in the CSP's script-src/font-src
 // to begin with, silently breaking the chart and the chosen typography for
 // any operator without unrestricted outbound access from the browser).
-const STATIC_ASSET_TYPES = { '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.woff2': 'font/woff2' };
+const STATIC_ASSET_TYPES = { '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
 
 // ─── Deep-linking (v12.31.0) ───────────────────────────────────────────────
 // Une URL directe par page ("/map", "/live-logs", ...) est une SPA route :
@@ -201,16 +201,16 @@ function loginPage(error = '', lang = 'en') {
   const MONO_STACK  = "ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace";
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NGX Ops — Connexion</title>
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{min-height:100vh;background:#0a0b0d;display:flex;align-items:center;justify-content:center;font-family:${SANS_STACK}}
 .wrap{width:100%;max-width:380px;padding:20px}
 .card{background:#14171d;border:1px solid #ffffff0f;border-radius:14px;padding:40px 36px}
 .logo{display:flex;align-items:center;gap:12px;margin-bottom:32px;justify-content:center}
-.logo-icon{width:36px;height:36px;background:#00e87a;border-radius:8px;display:flex;align-items:center;justify-content:center}
-.logo-icon svg{width:20px;height:20px;fill:none;stroke:#000;stroke-width:2.5;stroke-linecap:round}
+.logo-img{width:40px;height:40px;display:block}
 .logo-text{font-size:20px;font-weight:800;color:#e8eaf0;letter-spacing:-.5px}
-h1{font-size:15px;font-weight:700;color:#e8eaf0;margin-bottom:6px;text-align:center}
+h1{font-size:15px;font-weight:700;color:#e8eaf0;margin-bottom:24px;text-align:center}
 .sub{font-size:12px;color:#5a6278;text-align:center;margin-bottom:28px;font-family:${MONO_STACK}}
 label{display:block;font-family:${MONO_STACK};font-size:11px;color:#5a6278;letter-spacing:.3px;margin-bottom:5px}
 input{width:100%;background:#1c202a;border:1px solid #ffffff18;border-radius:6px;color:#e8eaf0;font-family:${MONO_STACK};font-size:13px;padding:10px 14px;outline:none;transition:.15s;margin-bottom:16px}
@@ -221,11 +221,10 @@ button:hover{background:#00ff85}
 </style></head><body>
 <div class="wrap"><div class="card">
   <div class="logo">
-    <div class="logo-icon"><svg viewBox="0 0 16 16"><polyline points="2,12 5,7 8,9 11,4 14,6"/></svg></div>
+    <img class="logo-img" src="/assets/logo.svg" alt="" width="40" height="40">
     <div class="logo-text">NGX Ops</div>
   </div>
-  <h1>Connexion</h1>
-  <div class="sub">Authentification requise</div>
+  <h1>${L.title}</h1>
   <div class="error">${error}</div>
   <form method="POST" action="/auth/login">
     <label>${L.user}</label>
@@ -422,6 +421,8 @@ blocklistsFeature.setDeps({
   buildVhostRulesMap: analyzerFeature.buildVhostRulesMap,
   // Sources `type: waf` : IP des listes du WAF emule (conteneur ngx-waf).
   wafListIps: wafFeature.wafListIps,
+  // Sources `type: challenge` : IP bloquees automatiquement par le challenge integre.
+  challengeListIps: require('./features/challenge-container').challengeListIps,
 });
 // Apres un deslistage depuis la page WAF, la blocklist se rafraichit sans attendre le cycle.
 wafFeature.setDeps({

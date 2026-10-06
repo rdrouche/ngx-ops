@@ -325,6 +325,8 @@ func (s *Store) tryOpen() (db *sql.DB, err error) {
 	// mono-thread de node:sqlite, et evite tout "database is locked" entre
 	// plusieurs connexions du pool database/sql vers le meme fichier.
 	db.SetMaxOpenConns(1)
+	// v12.74.0 : nouvelle base -> auto_vacuum incremental (sans effet sur une base existante).
+	_, _ = db.Exec(`PRAGMA auto_vacuum = INCREMENTAL`)
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, err

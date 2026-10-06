@@ -25,6 +25,7 @@ type Counts struct {
 	RateLimited int `json:"rateLimited"` // trop de tentatives
 	PassCookie  int `json:"passCookie"`  // requêtes laissées passer grâce au cookie
 	PassBot     int `json:"passBot"`     // requêtes laissées passer : robot d'indexation vérifié
+	Blocked     int `json:"blocked"`     // requêtes refusées (403) : IP bloquée automatiquement
 }
 
 func (c *Counts) add(o Counts) {
@@ -36,6 +37,7 @@ func (c *Counts) add(o Counts) {
 	c.RateLimited += o.RateLimited
 	c.PassCookie += o.PassCookie
 	c.PassBot += o.PassBot
+	c.Blocked += o.Blocked
 }
 
 // Stats : accumulateur thread-safe.

@@ -16,6 +16,7 @@
     } catch (e) { /* localStorage indisponible (navigation privee, etc.) — theme par defaut */ }
   })();
 </script>
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
 <link href="/assets/fonts/fonts.css" rel="stylesheet">
 <link href="/assets/style.css" rel="stylesheet">
 </head>
@@ -23,7 +24,7 @@
 
 <header>
   <div class="logo">
-    <div class="logo-icon"><svg viewBox="0 0 16 16"><polyline points="2,12 5,7 8,9 11,4 14,6"/></svg></div>
+    <img class="logo-img" src="/assets/logo.svg" alt="" width="28" height="28">
     NGX Ops
   </div>
   <div class="hbadge" id="header-custom-text" style="display:none;background:var(--bg3)"></div>
@@ -141,12 +142,12 @@
     <span data-i18n="nav.monitoring">Monitoring</span>
     <span class="nb" id="monitoring-count">—</span>
   </div>
-  <div class="ni" data-page="graph">
+  <div class="ni" id="nav-graph" data-page="graph">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="3" cy="4" r="1.6"/><circle cx="3" cy="12" r="1.6"/><circle cx="13" cy="8" r="1.6"/><path d="M4.4 4.7L11.6 7.4M4.4 11.3L11.6 8.6"/></svg>
     <span data-i18n="nav.graph">Schéma</span>
     <span class="nb" id="graph-count">—</span>
   </div>
-  <div class="ni" data-page="deploy">
+  <div class="ni" id="nav-deploy" data-page="deploy">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 11v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2"/></svg>
     <span data-i18n="nav.deploy">Déploiement Git</span>
     <span class="nb" id="deploy-diff-count"></span>
@@ -173,7 +174,7 @@
     <span data-i18n="nav.logs">Événements</span>
     <span class="nb" id="log-count">0</span>
   </div>
-  <div class="ni" data-page="notif-history">
+  <div class="ni" id="nav-notif-history" data-page="notif-history">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.6a3 3 0 0 0-3 3v1.1c0 .95-.34 1.87-.96 2.6L3 10h10l-1.04-2.7a4.1 4.1 0 0 1-.96-2.6V4.6a3 3 0 0 0-3-3z"/><path d="M6.2 12.4a1.9 1.9 0 0 0 3.6 0"/></svg>
     <span data-i18n="nav.notifHistory">Notifications</span>
     <span class="nb" id="notif-nav-badge">0</span>
@@ -431,7 +432,8 @@
 <div class="page" id="page-diagnostic">
   <div class="row">
     <div><div class="ptitle" data-i18n="diagnostic.title">Diagnostic</div><div class="psub" data-i18n="diagnostic.sub">Un coup d'oeil par vhost : sécurité, backends, monitoring et schéma</div></div>
-    <button class="sm ml" onclick="loadDiagnostic()">↻ Rafraîchir</button>
+    <button class="sm ml" onclick="pageHelpOpen('diagnostic')">&#10067; <span data-i18n="help.btn">Aide</span></button>
+    <button class="sm" onclick="loadDiagnostic()">↻ Rafraîchir</button>
   </div>
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
     <input class="log-filter" id="diag-search" placeholder="Rechercher (fichier, server_name…)" oninput="renderDiagGrid()" style="width:260px">
@@ -470,7 +472,8 @@
 <div class="page" id="page-monitoring">
   <div class="row">
     <div><div class="ptitle" data-i18n="monitoring.title">Continuous monitoring</div><div class="psub" data-i18n="monitoring.sub">Vhosts opted in via a comment flag — response codes/times and downtime history</div></div>
-    <button class="sm ml" id="monitoring-check-now-btn" onclick="checkMonitoringNow()">▶ Vérifier maintenant</button>
+    <button class="sm ml" onclick="pageHelpOpen('monitoring')">&#10067; <span data-i18n="help.btn">Aide</span></button>
+    <button class="sm" id="monitoring-check-now-btn" onclick="checkMonitoringNow()">▶ Vérifier maintenant</button>
     <button class="sm" onclick="loadMonitoring()">↻ Rafraîchir</button>
   </div>
   <div id="monitoring-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px"><div class="card" style="color:var(--text3)">Chargement…</div></div>
@@ -709,7 +712,8 @@
   <div class="row">
     <div><div class="ptitle" data-i18n="blocklists.title">Blocklists IP</div><div class="psub" data-i18n="blocklists.sub">Agrégation périodique de listes de blocage IP externes</div></div>
     <div style="display:flex;gap:8px">
-      <button class="sm ml" onclick="loadBlocklistsPage()">↻ <span data-i18n="blocklists.refresh">Rafraîchir</span></button>
+      <button class="sm ml" onclick="pageHelpOpen('blocklists')">&#10067; <span data-i18n="help.btn">Aide</span></button>
+    <button class="sm" onclick="loadBlocklistsPage()">↻ <span data-i18n="blocklists.refresh">Rafraîchir</span></button>
       <button class="sm primary" onclick="blocklistsRefreshNow()" id="btn-blocklists-refresh">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="12" height="12"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg>
         <span data-i18n="blocklists.refreshnow">Rafraîchir maintenant</span>
@@ -1265,6 +1269,7 @@
       <div class="psub" data-i18n="sysinfo.sub">Paramètres du dashboard lui-même — valeur actuelle, valeur par défaut, et comment la surcharger. Les champs sensibles n'affichent jamais leur valeur, seulement s'ils sont configurés.</div>
     </div>
     <div style="display:flex;gap:6px">
+      <button class="btn sm" id="sysinfo-menu-btn" onclick="menuFormOpen()">&#9776; <span data-i18n="menuform.btn">Menu</span></button>
       <button class="btn sm" id="sysinfo-changelog-btn" style="display:none" onclick="changelogOpen()">&#128220; <span data-i18n="sysinfo.changelogBtn">Changelog</span></button>
       <button class="btn sm" id="sysinfo-alerting-btn" style="display:none" onclick="alertingHistoryOpen()">&#128276; <span data-i18n="sysinfo.alertingBtn">Alertes</span></button>
       <button class="btn sm" onclick="loadSystemInfo()">&#8635; <span data-i18n="common.refresh">Refresh</span></button>
@@ -1295,6 +1300,31 @@
         <thead><tr><th data-i18n="sysinfo.col.file">Fichier</th><th data-i18n="sysinfo.col.content">Contenu</th></tr></thead>
         <tbody id="sysinfo-yaml-body"></tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<div id="page-help-overlay" class="rb-overlay" style="display:none" onclick="if(event.target===this) pageHelpClose()">
+  <div class="rb-panel">
+    <div class="row" style="margin-bottom:4px">
+      <div class="ctitle" id="page-help-title"></div>
+      <button class="btn sm" onclick="pageHelpClose()">&#10005; <span data-i18n="common.close">Fermer</span></button>
+    </div>
+    <div id="page-help-body" style="font-size:12px;line-height:1.55;color:var(--text2)"></div>
+  </div>
+</div>
+
+<div id="menu-form-overlay" class="rb-overlay" style="display:none" onclick="if(event.target===this) menuFormClose()">
+  <div class="rb-panel" style="max-width:560px">
+    <div class="row" style="margin-bottom:4px">
+      <div class="ctitle" data-i18n="menuform.title">Menu — éléments affichés</div>
+      <button class="btn sm" onclick="menuFormClose()">&#10005; <span data-i18n="common.close">Fermer</span></button>
+    </div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:8px" data-i18n="menuform.hint">Choisissez ce qui apparaît dans le menu de gauche. « auto » laisse le dashboard décider. Une variable d'environnement MENU_* verrouille l'élément. Les pages restent accessibles par leur URL.</div>
+    <div id="menu-form-body"></div>
+    <div id="menu-form-msg" style="font-size:12px;margin:8px 0;min-height:16px"></div>
+    <div style="display:flex;gap:6px;justify-content:flex-end">
+      <button class="btn sm primary" id="menu-form-save" onclick="menuFormSave()" data-i18n="menuform.save">Enregistrer</button>
     </div>
   </div>
 </div>
@@ -1382,7 +1412,8 @@ host_geoip_path: /containers/nginx-rproxy/geoip_data</pre>
       </div>
     </div>
 
-    <!-- Apprentissage -->
+    <!-- Apprentissage : 3 cartes sur une ligne (requetes / pays / volume de donnees) -->
+    <div id="an-baseline-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:14px">
     <div class="card" id="an-baseline-card" style="display:none">
       <div class="row" style="margin-bottom:10px">
         <div class="ctitle" data-i18n="analyzer.volumetricTitle">Analyse volumetrique</div>
@@ -1391,13 +1422,23 @@ host_geoip_path: /containers/nginx-rproxy/geoip_data</pre>
       <div id="an-baseline"></div>
     </div>
 
-    <!-- Apprentissage — trafic par pays -->
     <div class="card" id="an-baseline-country-card" style="display:none">
       <div class="row" style="margin-bottom:10px">
         <div class="ctitle" data-i18n="analyzer.countryTrafficTitle">Trafic inhabituel par pays</div>
         <button class="btn sm" onclick="baselineViewOpen('country')">&#128065; <span data-i18n="baselineView.btn">Voir ce qui est appris</span></button>
       </div>
       <div id="an-baseline-country"></div>
+    </div>
+
+
+    <!-- Apprentissage — volume de donnees (v12.74.0) -->
+    <div class="card" id="an-baseline-data-card" style="display:none">
+      <div class="row" style="margin-bottom:10px">
+        <div class="ctitle" data-i18n="analyzer.dataTitle">Volume de donn&eacute;es</div>
+        <button class="btn sm" onclick="baselineViewOpen('data')">&#128065; <span data-i18n="baselineView.btn">Voir ce qui est appris</span></button>
+      </div>
+      <div id="an-baseline-data"></div>
+    </div>
     </div>
 
     <!-- NGX Ops Intelligence (v12.69.0) -->
@@ -1616,6 +1657,7 @@ host_geoip_path: /containers/nginx-rproxy/geoip_data</pre>
       <div class="psub" data-i18n="wafemu.sub">Analyse a posteriori des journaux d'accès (Coraza + OWASP CRS), détection et listes de remédiation</div>
     </div>
     <div style="display:flex;gap:6px">
+      <button class="btn sm" onclick="wfHelpModal()">&#10067; <span data-i18n="wafemu.help.btn">Aide remédiation</span></button>
       <button class="btn sm" onclick="wfLoad()">&#8635; <span data-i18n="common.refresh">Rafraichir</span></button>
     </div>
   </div>
@@ -2648,6 +2690,29 @@ enable: true                   # gérer le conteneur depuis ce dashboard</pre>
       <div class="nf-hint" id="ch-stats-note" style="margin-top:6px"></div>
     </div>
 
+    <div class="card" id="ch-off-card">
+      <div class="row" style="margin-bottom:10px">
+        <div class="ctitle" data-i18n="challenge.off.title">IP qui échouent au challenge</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="ch-off-hours" onchange="challengeOffendersLoad()" style="width:auto">
+            <option value="1" data-i18n="challenge.off.h1">1 heure</option>
+            <option value="6" data-i18n="challenge.off.h6">6 heures</option>
+            <option value="24" selected data-i18n="challenge.stats.h24">24 heures</option>
+            <option value="72" data-i18n="challenge.off.h72">3 jours</option>
+            <option value="168" data-i18n="challenge.stats.h168">7 jours</option>
+          </select>
+          <select id="ch-off-min" onchange="challengeOffendersLoad()" style="width:auto">
+            <option value="3">≥ 3</option><option value="10" selected>≥ 10</option><option value="30">≥ 30</option><option value="100">≥ 100</option>
+          </select>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;margin:0;cursor:pointer"><input type="checkbox" id="ch-off-never" checked style="width:auto" onchange="challengeOffendersLoad()"> <span data-i18n="challenge.off.never">jamais résolu</span></label>
+          <button class="btn sm" onclick="challengeOffendersLoad()">&#8635;</button>
+        </div>
+      </div>
+      <div id="ch-off-cfg" style="font-size:12px;margin-bottom:6px"></div>
+      <div id="ch-off-body" style="overflow-x:auto"></div>
+      <div class="nf-hint" style="margin-top:8px" data-i18n="challenge.off.hint">Tentatives = redirections vers la page de vérification + échecs + limitations. Une IP qui a résolu le challenge n'est jamais bloquée automatiquement. Données en mémoire dans le conteneur (effacées au redémarrage).</div>
+    </div>
+
     <div class="card">
       <div class="row" style="margin-bottom:10px">
         <div class="ctitle" data-i18n="challenge.containerTitle">Conteneur</div>
@@ -3622,6 +3687,10 @@ function copyFeedback(btnId, ok, okLabel, failLabel) {
 // sur des dictionnaires encore vides et afficherait les cles brutes le temps
 // que le fetch des fichiers de langue reponde.
 (async () => {
+  // v12.74.1 : les scripts externes (nav.js, page-help.js...) sont charges plus bas dans la page ; si les
+  // traductions reviennent du cache avant eux, initNavSections() etait appelee avant d'exister
+  // (ReferenceError aleatoire). On attend la fin de l'analyse du document (tous les scripts classiques executes).
+  if (document.readyState === 'loading') await new Promise(r => document.addEventListener('DOMContentLoaded', r, { once: true }));
   await loadTranslations();
   applyTranslations();
   setColorTheme(localStorage.getItem('ngx_theme') || 'green');
@@ -3766,6 +3835,9 @@ function copyFeedback(btnId, ok, okLabel, failLabel) {
 <script src="/assets/js/error-pages.js"></script>
 <script src="/assets/js/blocklists.js"></script>
 <script src="/assets/js/challenge.js"></script>
+<script src="/assets/js/challenge-offenders.js"></script>
+<script src="/assets/js/page-help.js"></script>
+<script src="/assets/js/menu-form.js"></script>
 <script src="/assets/js/docker-autoconfig.js"></script>
 <script src="/assets/js/agents.js"></script>
 <script src="/assets/js/crowdsec.js"></script>

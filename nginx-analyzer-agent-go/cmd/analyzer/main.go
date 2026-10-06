@@ -72,6 +72,8 @@ func main() {
 		log.Printf("  Baseline  : %s, %.0f%% des creneaux", learningLabel(bs.Learning, bs.DaysElapsed, bs.DaysRequired), bs.Coverage)
 		cbs := a.CountryBaseline.Stats()
 		log.Printf("  Base.pays : %s, %.0f%% des creneaux", learningLabel(cbs.Learning, cbs.DaysElapsed, cbs.DaysRequired), cbs.Coverage)
+		dbs := a.DataBaseline.Stats()
+		log.Printf("  Base.data : %s, %.0f%% des creneaux", learningLabel(dbs.Learning, dbs.DaysElapsed, dbs.DaysRequired), dbs.Coverage)
 		wafStats, _ := a.WafTailer.Status()
 		log.Printf("  WAF       : %s (%d fichier(s))", cfg.WafLogPatternRaw, wafStats.Files)
 		blStats, _ := a.BlocklistTailer.Status()

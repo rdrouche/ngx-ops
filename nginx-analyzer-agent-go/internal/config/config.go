@@ -82,6 +82,12 @@ type Config struct {
 
 	CountrySigmaThreshold int
 	CountryMinRequests    int
+	DataSigmaThreshold    int
+	DataMinBytes          int64
+	DBCompactOnStart      string
+	DBCompactMinFreeMb    int
+	DBCompactMinFreePct   int
+	RuleDataVolumeEnable  bool
 
 	RuleBruteforceEnable     bool
 	RuleScanEnable           bool
@@ -147,6 +153,12 @@ func Load() *Config {
 
 	c.CountrySigmaThreshold = intEnv("COUNTRY_SIGMA_THRESHOLD", 6)
 	c.CountryMinRequests = intEnv("COUNTRY_MIN_REQUESTS", 300)
+	c.DataSigmaThreshold = intEnv("DATA_SIGMA_THRESHOLD", 6)
+	c.DataMinBytes = int64(intEnv("DATA_MIN_BYTES", 50*1024*1024))
+	c.DBCompactOnStart = str("DB_COMPACT_ON_START", "auto")
+	c.DBCompactMinFreeMb = intEnv("DB_COMPACT_MIN_FREE_MB", 16)
+	c.DBCompactMinFreePct = intEnv("DB_COMPACT_MIN_FREE_PCT", 20)
+	c.RuleDataVolumeEnable = boolEnv("RULE_DATA_VOLUME_ENABLE", true)
 
 	c.RuleBruteforceEnable = boolEnv("RULE_BRUTEFORCE_ENABLE", true)
 	c.RuleScanEnable = boolEnv("RULE_SCAN_ENABLE", true)

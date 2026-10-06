@@ -86,11 +86,12 @@ func (s *Store) SetOffset(file string, inode uint64, offset int64, format string
 
 // Stats replique stats().
 type Stats struct {
-	Persistent bool
-	Pending    int
-	Rows       map[string]int
-	Alerts     int
-	DBBytes    int64
+	Persistent  bool
+	Pending     int
+	Rows        map[string]int
+	Alerts      int
+	DBBytes     int64
+	DBFreeBytes int64
 }
 
 func (s *Store) Stats() Stats {
@@ -116,9 +117,10 @@ func (s *Store) Stats() Stats {
 	rows.Close()
 	var alertCount int
 	_ = s.db.QueryRow(`SELECT COUNT(*) FROM alerts`).Scan(&alertCount)
+	freeBytes := s.freeStatsLocked().FreeBytes
 	var size int64
 	if fi, err := os.Stat(s.dbPath); err == nil {
 		size = fi.Size()
 	}
-	return Stats{Persistent: true, Pending: pending, Rows: rowCounts, Alerts: alertCount, DBBytes: size}
+	return Stats{Persistent: true, Pending: pending, Rows: rowCounts, Alerts: alertCount, DBBytes: size, DBFreeBytes: freeBytes}
 }

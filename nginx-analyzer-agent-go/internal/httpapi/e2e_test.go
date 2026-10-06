@@ -212,8 +212,8 @@ func TestE2E(t *testing.T) {
 	t.Run("catalogue des regles", func(t *testing.T) {
 		rules := get("/api/rules")
 		builtins, _ := rules["builtins"].([]any)
-		if len(builtins) != 6 {
-			t.Fatalf("attendu 6 regles integrees, obtenu %d", len(builtins))
+		if len(builtins) != 7 {
+			t.Fatalf("attendu 7 regles integrees, obtenu %d", len(builtins))
 		}
 		for _, b := range builtins {
 			bm := b.(map[string]any)

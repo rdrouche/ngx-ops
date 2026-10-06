@@ -64,6 +64,12 @@ const wait=ms=>new Promise(r=>setTimeout(r,ms));
     assert.strictEqual(typeof cb.bucketsTracked,'number');
   });
 
+  const db=await get('/api/baseline/data');
+  check('GET /api/baseline/data (volume de donnees) en apprentissage', ()=>{
+    assert.strictEqual(db.learning,true);
+    assert.ok(st.dataBaseline,'dataBaseline absent de /api/status');
+  });
+
   console.log('\ntrafic normal');
   let traffic=''; for(let i=0;i<30;i++) traffic+=line({ip:`198.51.100.${i}`,p:`/page-${i}`});
   fs.appendFileSync(LOG,traffic);
@@ -380,8 +386,8 @@ const wait=ms=>new Promise(r=>setTimeout(r,ms));
   });
 
   const rules=await get('/api/rules');
-  check('les 6 regles integrees sont listees, actives par defaut', ()=>{
-    assert.strictEqual(rules.builtins.length,6);
+  check('les 7 regles integrees sont listees, actives par defaut', ()=>{
+    assert.strictEqual(rules.builtins.length,7);
     assert.ok(rules.builtins.every(b=>b.enabled===true));
     assert.ok(rules.builtins.every(b=>b.explanation && b.explanation.what));
   });

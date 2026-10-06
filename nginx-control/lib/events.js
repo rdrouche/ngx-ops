@@ -27,6 +27,7 @@ function initEventsDb() {
   try {
     const { DatabaseSync } = require('node:sqlite');
     eventsDb = new DatabaseSync(cfg.EVENTS_DB_PATH);
+    try { eventsDb.exec('PRAGMA auto_vacuum = INCREMENTAL'); } catch {} // v12.74.0 (bases neuves)
     eventsDb.exec(`
       CREATE TABLE IF NOT EXISTS events (
         id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,6 +42,7 @@ function initEventsDb() {
     initDigestsTable();
     purgeOldEvents();
     purgeOldDigests();
+    require('./db-maintenance').register(eventsDb, 'events', cfg);
     console.log(`[events] DB ready: ${cfg.EVENTS_DB_PATH} (retention: ${cfg.EVENTS_RETENTION_DAYS}d)`);
   } catch (e) {
     console.warn('[events] SQLite unavailable — events will be in-memory only:', e.message);

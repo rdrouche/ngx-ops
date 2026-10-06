@@ -202,6 +202,12 @@ const ENTRIES = [
     description: "Duree de conservation du journal d evenements (page Evenements)." },
   { key: 'MONITOR_RETENTION_DAYS', category: 'Rétention', value: cfg.MONITOR_RETENTION_DAYS, default: 30, override: ENV('MONITOR_RETENTION_DAYS'),
     description: "Duree de conservation de l historique du monitoring continu (checks + incidents clos — un incident encore ouvert n est jamais purge)." },
+  { key: 'DB_COMPACT_ON_START', category: 'Rétention', value: cfg.DB_COMPACT_ON_START, default: 'auto', override: ENV('DB_COMPACT_ON_START'),
+    description: "Compactage SQLite au demarrage (events.db, monitoring.db, notifications-center.db) : une purge libere des pages sans reduire le fichier. auto = VACUUM seulement si l espace recuperable depasse les seuils ci-dessous, always = toujours, off = jamais. Un entretien leger (checkpoint WAL + incremental_vacuum) tourne ensuite toutes les 6 h." },
+  { key: 'DB_COMPACT_MIN_FREE_MB', category: 'Rétention', value: cfg.DB_COMPACT_MIN_FREE_MB, default: 16, override: ENV('DB_COMPACT_MIN_FREE_MB'),
+    description: "Mode auto : espace libre minimal (Mo) dans une base SQLite pour declencher le compactage au demarrage." },
+  { key: 'DB_COMPACT_MIN_FREE_PCT', category: 'Rétention', value: cfg.DB_COMPACT_MIN_FREE_PCT, default: 20, override: ENV('DB_COMPACT_MIN_FREE_PCT'),
+    description: "Mode auto : part minimale (%) de pages libres dans la base pour declencher le compactage au demarrage (en plus du seuil en Mo)." },
   { key: 'NOTIF_CENTER_RETENTION_DAYS', category: 'Rétention', value: cfg.NOTIF_CENTER_RETENTION_DAYS, default: 90, override: ENV('NOTIF_CENTER_RETENTION_DAYS'),
     description: "Duree de conservation des notifications du centre de notification (cloche d en-tete), lues ou non." },
 
@@ -266,6 +272,16 @@ const ENTRIES = [
     description: "Visibilite du menu Auto-config Docker. `auto` (defaut) reflete `enable:` dans docker-autoconfig.yml (la fonctionnalite tourne deja en arriere-plan quel que soit ce reglage d affichage — desactiver la fonctionnalite se fait dans ce fichier, pas ici) ; `show`/`hide` forcent l affichage independamment." },
   { key: 'AGENTS_MENU', category: 'Menu', value: 'auto', default: 'auto', override: ENV_OR_YAML('MENU_AGENTS', 'menu.yml'),
     description: "Visibilite du menu Hotes distants. `auto` (defaut) reflete `enable:` dans agents.yml ; `show`/`hide` forcent l affichage independamment." },
+  // v12.72.0 : entrees de menu masquables via le formulaire "Menu" (Systeme) ou menu.yml.
+  ...[
+    ['SYNC', 'Sync ref files'], ['VHOSTGEN', 'Generateur VHost'], ['GRAPH', 'Schema'], ['DEPLOY', 'Deploiement Git'],
+    ['BLOCKLISTS', 'Blocklist IP'], ['WAFEMU', 'WAF Emule'], ['GEOMAP', 'Carte'], ['DIGEST', 'Resume'], ['CACHE', 'Nginx Cache'], ['NOTIFICATIONS', 'Notifications'],
+  ].map(([k, label]) => ({
+    key: `${k}_MENU`, category: 'Menu', value: 'show', default: 'show', override: ENV_OR_YAML(`MENU_${k}`, 'menu.yml'),
+    description: `Visibilite du menu ${label}. Valeurs acceptees : show (defaut), hide. Reglable aussi depuis le bouton Menu de cette page.`,
+  })),
+  { key: 'GOACCESS_MENU', category: 'Menu', value: 'auto', default: 'auto', override: ENV_OR_YAML('MENU_GOACCESS', 'menu.yml'),
+    description: "Visibilite du menu GoAccess. `auto` (defaut) l affiche seulement si des sources GoAccess sont configurees ; `hide` le masque dans tous les cas." },
 
   // ─── GoDNS (v12.39.0, retour utilisateur) ──────────────────────────────
   // SECURITE : verification multi-source de l IP publique — voir
@@ -301,7 +317,7 @@ const YAML_BACKED_SETTINGS = [
   { file: 'blocklists.yml', purpose: 'Sources de blocklists IP externes (URL, cron, action) — page Blocklists IP' },
   { file: 'deploy-tokens.yml', purpose: 'Jetons scopes pour declencher un deploiement Git depuis un pipeline CI/CD (Forgejo/GitHub/GitLab)' },
   { file: 'docker-autoconfig.yml', purpose: 'Auto-config Docker par labels (approbation, motifs autorises, intervalle de sondage) — page Auto-config Docker' },
-  { file: 'menu.yml', purpose: 'Visibilite des elements de menu optionnels (WAF, GoDNS, REST API, Webhooks, Auto-config Docker, Hotes distants) — voir aussi MENU_WAF/MENU_GODNS/MENU_API/MENU_WEBHOOKS/MENU_DOCKER_AUTOCONFIG/MENU_AGENTS' },
+  { file: 'menu.yml', purpose: 'Visibilite des elements de menu optionnels (WAF, GoDNS, REST API, Webhooks, Auto-config Docker, Hotes distants, Sync, VHost Generator, Schema, Deploiement Git, Blocklists, WAF emule, Carte, Resume, GoAccess ; editable via le bouton Menu de Systeme) — voir aussi MENU_WAF/MENU_GODNS/MENU_API/MENU_WEBHOOKS/MENU_DOCKER_AUTOCONFIG/MENU_AGENTS' },
   { file: 'features.yml', purpose: 'Interrupteurs marche/arret transversaux (alerting_enable pour le moment) — voir aussi ALERTING_ENABLE' },
 ];
 
@@ -415,6 +431,10 @@ async function buildSystemInfo() {
     }
     if (row.key === 'AGENTS_MENU') {
       row.value = `${menuVisibility.agents.mode} (${menuVisibility.agents.source}) -> ${menuVisibility.agents.visible ? 'affiche' : 'masque'}`;
+    }
+    if (/^(SYNC|VHOSTGEN|GRAPH|DEPLOY|BLOCKLISTS|WAFEMU|GEOMAP|DIGEST|CACHE|NOTIFICATIONS|GOACCESS)_MENU$/.test(row.key)) {
+      const mv = menuVisibility[row.key.replace(/_MENU$/, '').toLowerCase()];
+      if (mv) row.value = `${mv.mode} (${mv.source}) -> ${mv.visible ? 'affiche' : 'masque'}`;
     }
     if (row.key === 'ALERTING_ENABLE') {
       const flag = resolveFlag('alerting');

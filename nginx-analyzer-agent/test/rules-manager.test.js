@@ -25,7 +25,7 @@ console.log('\ncatalog() — sans thresholds (retro-compatibilite : jamais une e
 check('config: null pour chaque regle integree quand aucun threshold n est fourni', () => {
   const rm = new RulesManager(fakeStore());
   const cat = rm.catalog(EXPLANATIONS);
-  assert.strictEqual(cat.builtins.length, 6);
+  assert.strictEqual(cat.builtins.length, 7);
   for (const b of cat.builtins) assert.strictEqual(b.config, null, `${b.key} devrait avoir config: null`);
   assert.ok(cat.processing && typeof cat.processing === 'object', 'processing doit toujours etre present, meme sans thresholds');
 });

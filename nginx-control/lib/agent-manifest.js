@@ -548,6 +548,18 @@ function generateAgentVhostContent(validated, serverNames, listen, meta = {}) {
       // any request that lacks it, no matter what Host it carries.
       lines.push(`        proxy_set_header X-NC-Tunnel "${meta.tunnelSecret}";`);
     }
+    if (isRelay) {
+      // v12.72.0 : WebSocket (et SSE) a travers le relais. Sans ces lignes nginx parle en HTTP/1.0 a
+      // l'agent et supprime l'en-tete Upgrade : tout upgrade echouait (l'agent Go sait pourtant les relayer).
+      // « Connection: upgrade » constant (pas de map $connection_upgrade, a definir cote http{}) ; le
+      // timeout de lecture evite de couper une connexion WebSocket inactive apres 60 s. Le mode tunnel
+      // reste sans WebSocket (JSON tamponne, voir README).
+      lines.push('        proxy_http_version 1.1;');
+      lines.push('        proxy_set_header Upgrade $http_upgrade;');
+      lines.push('        proxy_set_header Connection "upgrade";');
+      lines.push('        proxy_read_timeout 3600s;');
+      lines.push('        proxy_send_timeout 3600s;');
+    }
     if (isRelay && validated.relayScheme === 'https') {
       lines.push('        # Le saut agent est en HTTPS avec un certificat probablement');
       lines.push('        # auto-signe (voir nginx-agent/relay.go) : verification desactivee');

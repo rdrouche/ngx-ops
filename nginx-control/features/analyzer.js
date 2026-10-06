@@ -158,6 +158,11 @@ async function startAnalyzer(c) {
     `RULE_SCRAPING_ENABLE=${c.rule_scraping_enable ?? true}`,
     `RULE_VOLUMETRIC_ENABLE=${c.rule_volumetric_enable ?? true}`,
     `RULE_COUNTRY_TRAFFIC_ENABLE=${c.rule_country_traffic_enable ?? true}`,
+    // v12.74.0 : volume de donnees (octets sortants) par vhost + compactage SQLite au demarrage.
+    `RULE_DATA_VOLUME_ENABLE=${c.rule_data_volume_enable ?? true}`,
+    `DATA_SIGMA_THRESHOLD=${c.data_sigma_threshold ?? 6}`,
+    `DATA_MIN_BYTES=${c.data_min_bytes ?? 52428800}`,
+    `DB_COMPACT_ON_START=${/^(auto|always|off)$/.test(String(c.db_compact_on_start)) ? c.db_compact_on_start : 'auto'}`,
   ];
 
   const create = await dockerCall('POST', `/containers/create?name=${encodeURIComponent(name)}`, {
@@ -665,7 +670,7 @@ function register(router) {
     return send(res, 200, { reachable: true, ...r.data });
   });
 
-  /** Enable/disable one built-in rule (bruteforce, scan, flood, scraping, volumetric, country_traffic). */
+  /** Enable/disable one built-in rule (bruteforce, scan, flood, scraping, volumetric, country_traffic, data_volume). */
   router.post('/api/analyzer/rules/toggle', async ({ req, res, session }) => {
     if (!hasPerm(session, PERMS.DEPLOY)) return httpLib.forbidden(res);
     const body = await parseBody(req);
@@ -724,10 +729,12 @@ function register(router) {
     return send(res, 200, { reachable: true, ...r.data });
   });
 
+  const baselineType = v => (v === 'country' || v === 'data') ? v : 'vhost';
+
   // v12.68.0 : ce que la baseline a appris — resume par cle, puis profil des 168 creneaux.
   router.get('/api/analyzer/baseline/keys', async ({ res, session, url }) => {
     if (!hasPerm(session, PERMS.VIEW_METRICS)) return httpLib.forbidden(res);
-    const type = url.searchParams.get('type') === 'country' ? 'country' : 'vhost';
+    const type = baselineType(url.searchParams.get('type'));
     const r = await analyzerApi(`/api/baseline/keys?type=${type}`);
     if (!r) return send(res, 200, { reachable: false, keys: [] });
     return send(res, 200, { reachable: true, ...r.data });
@@ -735,7 +742,7 @@ function register(router) {
 
   router.get('/api/analyzer/baseline/profile', async ({ res, session, url }) => {
     if (!hasPerm(session, PERMS.VIEW_METRICS)) return httpLib.forbidden(res);
-    const type = url.searchParams.get('type') === 'country' ? 'country' : 'vhost';
+    const type = baselineType(url.searchParams.get('type'));
     const key = String(url.searchParams.get('key') || '');
     if (!key || key.length > 253) return httpLib.badRequest(res, 'key required');
     const r = await analyzerApi(`/api/baseline/profile?type=${type}&key=${encodeURIComponent(key)}`);
@@ -772,6 +779,25 @@ function register(router) {
       `/api/baseline/country/exclude?country=${encodeURIComponent(body.country)}&hour=${encodeURIComponent(body.hour)}`,
       'POST');
     logEvent('analyzer.baseline_country_exclude', { country: body.country, hour: body.hour, by: session.username });
+    return send(res, 200, r?.data || { ok: false });
+  });
+
+  // v12.74.0 : baseline du volume de donnees (octets sortants par vhost et heure).
+  router.get('/api/analyzer/baseline/data', async ({ res, session }) => {
+    if (!hasPerm(session, PERMS.VIEW_METRICS)) return httpLib.forbidden(res);
+    const r = await analyzerApi('/api/baseline/data');
+    if (!r) return send(res, 200, { reachable: false });
+    return send(res, 200, { reachable: true, ...r.data });
+  });
+
+  router.post('/api/analyzer/baseline/data/exclude', async ({ req, res, session }) => {
+    if (!hasPerm(session, PERMS.DEPLOY)) return httpLib.forbidden(res);
+    const body = await parseBody(req);
+    if (!body.vhost || !body.hour) return httpLib.badRequest(res, 'vhost and hour required');
+    const r = await analyzerApi(
+      `/api/baseline/data/exclude?vhost=${encodeURIComponent(body.vhost)}&hour=${encodeURIComponent(body.hour)}`,
+      'POST');
+    logEvent('analyzer.baseline_data_exclude', { vhost: body.vhost, hour: body.hour, by: session.username });
     return send(res, 200, r?.data || { ok: false });
   });
 

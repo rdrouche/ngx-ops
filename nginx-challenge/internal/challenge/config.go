@@ -21,20 +21,21 @@ import (
 
 // Config regroupe les réglages du service (variables d'environnement NC_*).
 type Config struct {
-	Bind            string        // NC_BIND, défaut ":8080"
-	StatsFile       string        // stats.json à côté de NC_SECRET_FILE (vide = mémoire seule)
-	Secret          []byte        // NC_SECRET / NC_SECRET_FILE (>= 32 octets)
-	SecretGenerated bool          // vrai si tiré au hasard au démarrage
-	Bits            int           // NC_DIFFICULTY_BITS (8..64), défaut 16
-	CookieName      string        // NC_COOKIE_NAME, défaut "nc_chal"
-	CookieTTL       time.Duration // NC_COOKIE_HOURS (1..720), défaut 24
-	TokenTTL        time.Duration // NC_TOKEN_SECONDS (30..900), défaut 300
-	BindIP          bool          // NC_BIND_IP, défaut true : cookie lié à l'IP (/64 en IPv6)
-	Secure          bool          // NC_COOKIE_SECURE, défaut true
-	RateLimit       int           // NC_RATE_PER_MIN (1..600), défaut 30 appels /api par IP et par minute
-	Lang            string        // NC_LANG : auto (Accept-Language, repli en), fr ou en
-	GoodBots        bool          // NC_GOODBOTS, défaut true : robots d'indexation vérifiés (si le vhost l'autorise)
-	ExtraBots       []BotRule     // NC_GOODBOTS_EXTRA : règles supplémentaires nom|regex|.suffixe
+	Bind            string          // NC_BIND, défaut ":8080"
+	StatsFile       string          // stats.json à côté de NC_SECRET_FILE (vide = mémoire seule)
+	Secret          []byte          // NC_SECRET / NC_SECRET_FILE (>= 32 octets)
+	SecretGenerated bool            // vrai si tiré au hasard au démarrage
+	Bits            int             // NC_DIFFICULTY_BITS (8..64), défaut 16
+	CookieName      string          // NC_COOKIE_NAME, défaut "nc_chal"
+	CookieTTL       time.Duration   // NC_COOKIE_HOURS (1..720), défaut 24
+	TokenTTL        time.Duration   // NC_TOKEN_SECONDS (30..900), défaut 300
+	BindIP          bool            // NC_BIND_IP, défaut true : cookie lié à l'IP (/64 en IPv6)
+	Secure          bool            // NC_COOKIE_SECURE, défaut true
+	RateLimit       int             // NC_RATE_PER_MIN (1..600), défaut 30 appels /api par IP et par minute
+	Lang            string          // NC_LANG : auto (Accept-Language, repli en), fr ou en
+	GoodBots        bool            // NC_GOODBOTS, défaut true : robots d'indexation vérifiés (si le vhost l'autorise)
+	ExtraBots       []BotRule       // NC_GOODBOTS_EXTRA : règles supplémentaires nom|regex|.suffixe
+	Offenders       OffendersConfig // NC_AUTOBLOCK*, NC_OFFENDERS_HOURS : analyse des IP en échec et blocage automatique
 }
 
 const minSecretLen = 32
@@ -44,6 +45,7 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	c := Config{
 		Bind: ":8080", Bits: 16, CookieName: "nc_chal", CookieTTL: 24 * time.Hour,
 		TokenTTL: 5 * time.Minute, BindIP: true, Secure: true, RateLimit: 30, GoodBots: true,
+		Offenders: DefaultOffendersConfig(),
 	}
 	if v := strings.TrimSpace(getenv("NC_BIND")); v != "" {
 		c.Bind = v
@@ -125,6 +127,27 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	if c.ExtraBots, err = ParseExtraBotRules(getenv("NC_GOODBOTS_EXTRA")); err != nil {
 		return c, err
 	}
+	if c.Offenders.Autoblock, err = boolEnv(getenv, "NC_AUTOBLOCK", c.Offenders.Autoblock); err != nil {
+		return c, err
+	}
+	if c.Offenders.Threshold, err = intEnv(getenv, "NC_AUTOBLOCK_THRESHOLD", c.Offenders.Threshold, 3, 100000); err != nil {
+		return c, err
+	}
+	win, err := intEnv(getenv, "NC_AUTOBLOCK_WINDOW_MIN", int(c.Offenders.Window/time.Minute), 1, 1440)
+	if err != nil {
+		return c, err
+	}
+	c.Offenders.Window = time.Duration(win) * time.Minute
+	ban, err := intEnv(getenv, "NC_AUTOBLOCK_HOURS", int(c.Offenders.BanFor/time.Hour), 1, 720)
+	if err != nil {
+		return c, err
+	}
+	c.Offenders.BanFor = time.Duration(ban) * time.Hour
+	ret, err := intEnv(getenv, "NC_OFFENDERS_HOURS", int(c.Offenders.Retention/time.Hour), 1, 168)
+	if err != nil {
+		return c, err
+	}
+	c.Offenders.Retention = time.Duration(ret) * time.Hour
 	return c, nil
 }
 

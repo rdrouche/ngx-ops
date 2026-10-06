@@ -11,7 +11,7 @@ import (
 // BuiltinKeys reproduit BUILTIN_KEYS = Object.keys(RULE_IDS) : l'ordre
 // d'insertion de detect.RULE_IDS cote Node, reproduit ici a la main puisque
 // les maps Go n'ont pas d'ordre stable.
-var BuiltinKeys = []string{"bruteforce", "scan", "flood", "scraping", "volumetric", "country_traffic"}
+var BuiltinKeys = []string{"bruteforce", "scan", "flood", "scraping", "volumetric", "country_traffic", "data_volume"}
 
 func ruleIDFor(key string) int {
 	switch key {
@@ -27,6 +27,8 @@ func ruleIDFor(key string) int {
 		return detect.RuleVolumetric
 	case "country_traffic":
 		return detect.RuleCountryTraffic
+	case "data_volume":
+		return detect.RuleDataVolume
 	default:
 		return 0
 	}
@@ -532,6 +534,7 @@ type Thresholds struct {
 	Scraping       *ScrapingThresholds
 	Volumetric     *VolumetricThresholds
 	CountryTraffic *VolumetricThresholds
+	DataVolume     *VolumetricThresholds
 }
 
 type BruteforceThresholds struct{ MinFailures int }
@@ -656,6 +659,13 @@ func (m *Manager) CatalogNL(explanations map[string]Explanation, thresholds Thre
 				config = map[string]any{
 					"learningDays": thresholds.CountryTraffic.LearningDays, "sigmaThreshold": thresholds.CountryTraffic.SigmaThreshold,
 					"minAbsoluteRequests": thresholds.CountryTraffic.MinAbsoluteRequests,
+				}
+			}
+		case "data_volume":
+			if thresholds.DataVolume != nil {
+				config = map[string]any{
+					"learningDays": thresholds.DataVolume.LearningDays, "sigmaThreshold": thresholds.DataVolume.SigmaThreshold,
+					"minAbsoluteBytes": thresholds.DataVolume.MinAbsoluteRequests,
 				}
 			}
 		}

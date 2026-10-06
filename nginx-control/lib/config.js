@@ -40,7 +40,7 @@ const int = (name, fallback) => {
 // ne sert qu en dehors d un conteneur construit par ce Dockerfile (tests
 // locaux, `node server.js` execute directement) — l ARG du Dockerfile a lui
 // meme deja son propre defaut ("dev") pour un build sans --build-arg.
-const VERSION = str('APP_VERSION', '12.71.1');
+const VERSION = str('APP_VERSION', '12.74.0');
 
 // ─── Core ────────────────────────────────────────────────────────────────────
 const PORT            = int('PORT', 3000);
@@ -361,6 +361,13 @@ const EVENTS_RETENTION_DAYS = int('EVENTS_RETENTION_DAYS', 30);
 const MONITOR_DB_PATH = path.join(CONFIG_DIR, 'monitoring.db');
 const MONITOR_RETENTION_DAYS = int('MONITOR_RETENTION_DAYS', 30);
 
+// v12.74.0 — SQLite maintenance (events.db, monitoring.db, notifications-center.db):
+// a purge frees pages but never shrinks the file. At start-up a VACUUM runs when the
+// reclaimable share is high enough (auto = thresholds, always, off).
+const DB_COMPACT_ON_START = (() => { const v = str('DB_COMPACT_ON_START', 'auto').toLowerCase(); return ['auto', 'always', 'off'].includes(v) ? v : 'auto'; })();
+const DB_COMPACT_MIN_FREE_MB = int('DB_COMPACT_MIN_FREE_MB', 16);
+const DB_COMPACT_MIN_FREE_PCT = int('DB_COMPACT_MIN_FREE_PCT', 20);
+
 // In-app notification center (lib/notifications.js) — the bell/dropdown in
 // the header. Its own database file, same reasoning as MONITOR_DB_PATH
 // above: an unrelated table from events.db, and separate from
@@ -590,6 +597,7 @@ module.exports = Object.freeze({
   ANALYZER_DEFAULT_IMAGE,
   EVENTS_DB_PATH, EVENTS_RETENTION_DAYS,
   MONITOR_DB_PATH, MONITOR_RETENTION_DAYS,
+  DB_COMPACT_ON_START, DB_COMPACT_MIN_FREE_MB, DB_COMPACT_MIN_FREE_PCT,
   NOTIF_CENTER_DB_PATH, NOTIF_CENTER_RETENTION_DAYS,
   DIR_SITES, DIR_CONF, DIR_SNIPPETS, DIR_STREAMS, DIR_SSL, DIR_CERTS, DIR_LOGS,
   DIR_CACHE, DIR_BACKUPS, DIR_GIT_WORK, HOST_LOGS, HOST_GOACCESS,

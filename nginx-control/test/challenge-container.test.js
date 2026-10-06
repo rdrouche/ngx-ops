@@ -103,5 +103,19 @@ check('sans ENV : config inchangee', () => {
   assert.deepStrictEqual(r.errors, []);
 });
 
+check('v12.73.0 : autoblock — defauts, parse, bornes, variables NC_* du conteneur', () => {
+  const d = C.parseChallengeConfig('').config;
+  assert.strictEqual(d.autoblock, false); assert.strictEqual(d.autoblockThreshold, 30); assert.strictEqual(d.autoblockHours, 24);
+  const r = C.parseChallengeConfig('autoblock: true\nautoblock_threshold: 50\nautoblock_window_minutes: 30\nautoblock_hours: 12\noffenders_hours: 48\n');
+  assert.deepStrictEqual(r.errors, []);
+  assert.strictEqual(r.config.autoblock, true); assert.strictEqual(r.config.autoblockThreshold, 50);
+  assert.ok(C.parseChallengeConfig('autoblock_threshold: 1\n').errors.length, 'seuil < 3 refuse');
+  assert.ok(C.parseChallengeConfig('autoblock_hours: 9999\n').errors.length);
+  const spec = C.buildContainerSpec({ engine: 'builtin', image: 'x/y:1', network: 'n', upstream: 'nginx-challenge:8080', config: r.config, secret: 'a'.repeat(40) });
+  for (const e of ['NC_AUTOBLOCK=true', 'NC_AUTOBLOCK_THRESHOLD=50', 'NC_AUTOBLOCK_WINDOW_MIN=30', 'NC_AUTOBLOCK_HOURS=12', 'NC_OFFENDERS_HOURS=48']) assert.ok(spec.Env.includes(e), e);
+  const anubis = C.buildContainerSpec({ engine: 'anubis', image: 'x/y:1', network: 'n', upstream: 'anubis:8923', config: r.config, secret: 'a'.repeat(64) });
+  assert.ok(!anubis.Env.some(e => e.startsWith('NC_AUTOBLOCK')));
+});
+
 console.log(`\n${pass} PASS, ${fail} FAIL`);
 process.exit(fail ? 1 : 0);

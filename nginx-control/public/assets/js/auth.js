@@ -100,4 +100,16 @@ async function checkOptionalFeatures() {
   // au lieu de continuer a afficher une page qui ne fait plus rien.
   document.getElementById('nav-docker-autoconfig').style.display = (mv && mv.dockerAutoconfig.visible === false) ? 'none' : '';
   document.getElementById('nav-agents').style.display = (mv && mv.agents.visible === false) ? 'none' : '';
+  // v12.72.0 : entrees masquables via le formulaire Menu (Systeme) / menu.yml.
+  // Un item deja masque plus haut (GoAccess non configure) le reste.
+  if (mv) {
+    [['sync', 'nav-sync'], ['vhostgen', 'nav-vhostgen'], ['graph', 'nav-graph'], ['deploy', 'nav-deploy'],
+     ['blocklists', 'nav-blocklists'], ['wafemu', 'nav-wafemu'], ['geomap', 'nav-geomap'], ['digest', 'nav-digest'], ['cache', 'nav-cache'], ['notifications', 'nav-notif-history'],
+     ['goaccess', 'nav-goaccess']].forEach(([k, id]) => {
+      const el = document.getElementById(id);
+      if (!el || !mv[k]) return;
+      if (mv[k].visible === false) el.style.display = 'none';
+      else if (k !== 'goaccess') el.style.display = ''; // goaccess : visibilite deja geree plus haut
+    });
+  }
 }

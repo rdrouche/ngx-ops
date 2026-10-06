@@ -105,6 +105,30 @@ async function fetchWafAlerts(q) {
   return { alerts, latestId: r.data.latestId != null ? r.data.latestId : null };
 }
 
+/** Blocages automatiques du challenge integre (v12.73.0) : un evenement de blocage = une alerte, curseur = numero de sequence. */
+async function fetchChallengeAlerts(q) {
+  const CC = require('./challenge-container'); // charge a la demande
+  const r = await CC.challengeBanEvents(q.sinceId || 0, 200);
+  if (!r.ok) return null;
+  const toAlert = (b) => ({
+    id: b.seq, ts: b.since * 1000, type: 'challenge', severity: 'medium', ip: b.ip, vhost: b.host || null,
+    evidence: { ip: b.ip, windowMinutes: b.windowMinutes, requests: b.attempts, redirected: b.redirected, failed: b.failed,
+      rateLimited: b.rateLimited, banHours: Math.max(1, Math.round((b.until - b.since) / 3600)), userAgents: b.userAgent ? [b.userAgent] : [],
+      firstSeen: b.since * 1000, lastSeen: b.since * 1000 },
+  });
+  const events = r.events || [];
+  if (q.order === 'desc') return { alerts: events.length ? [toAlert(events[events.length - 1])] : [], latestId: r.latest };
+  return { alerts: events.slice(0, q.limit || 100).map(toAlert), latestId: r.latest };
+}
+
+function challengeEnabled() {
+  try {
+    const { settings } = loadSettings();
+    if (!settings.includeChallenge) return false;
+    return require('./challenge-container').resolve().engine === 'builtin';
+  } catch { return false; }
+}
+
 function wafEnabled() {
   try { return require('./waf').isEnabled(); } catch { return false; }
 }
@@ -127,6 +151,14 @@ async function cycle(opts = {}) {
       r.state.waf = w.state; wafOutcome = w.outcome;
       if (w.outcome === 'sent') r.sent = (r.sent || 0) + (w.sent || 0);
     } else if (before.waf) r.state.waf = before.waf;
+    // Source challenge integre (opt-in include_challenge) : meme principe, curseur propre.
+    let challengeOutcome = null;
+    if (challengeEnabled() && !['disabled', 'not_ready', 'auth_error'].includes(r.outcome)) {
+      const c = await client.runCycle({ settings: eff, state: before.challenge, instance: instance(), deps: { fetchAlerts: fetchChallengeAlerts, post },
+        userAgent: cfg.HTTP_USER_AGENT, force: !!opts.force });
+      r.state.challenge = c.state; challengeOutcome = c.outcome;
+      if (c.outcome === 'sent') r.sent = (r.sent || 0) + (c.sent || 0);
+    } else if (before.challenge) r.state.challenge = before.challenge;
     { const cur = loadState(); r.state.ping = cur.ping; r.state.serverBatchLimit = cur.serverBatchLimit; } // ecrits par un ping concurrent
     saveState(r.state);
     if (r.outcome === 'auth_error' && !before.authError) {
@@ -135,7 +167,7 @@ async function cycle(opts = {}) {
     }
     if (r.outcome === 'sent' && !before.lastSuccessAt) logEvent('intelligence.first_send', `Premier lot envoye a la plateforme centrale (${r.sent} alerte(s))`, 'system');
     journalCycle(before, r);
-    return { outcome: r.outcome, wafOutcome, state: r.state, sent: r.sent, rejected: r.rejected };
+    return { outcome: r.outcome, wafOutcome, challengeOutcome, state: r.state, sent: r.sent, rejected: r.rejected };
   } catch (e) {
     console.warn('[intelligence] cycle:', e.message);
     return { outcome: 'error', error: e.message };
@@ -198,7 +230,7 @@ function journalCycle(before, r) {
   try {
     if (r.outcome === 'sent') {
       if (before.lastError) logEvent('intelligence.recovered', 'Envoi vers la plateforme centrale retabli', 'system');
-      logEvent('intelligence.sent', `${r.sent || 0} alerte(s) envoyee(s) a la plateforme centrale${r.rejected ? ` (${r.rejected} rejetee(s))` : ''}${r.wafOutcome === 'sent' ? ' — WAF inclus' : ''}`, 'system');
+      logEvent('intelligence.sent', `${r.sent || 0} alerte(s) envoyee(s) a la plateforme centrale${r.rejected ? ` (${r.rejected} rejetee(s))` : ''}${r.wafOutcome === 'sent' ? ' — WAF inclus' : ''}${r.challengeOutcome === 'sent' ? ' — blocages challenge inclus' : ''}`, 'system');
       return;
     }
     if (r.outcome === 'initialized') {
@@ -235,7 +267,7 @@ function startScheduler() {
     if (!settings.enable || !settings.ready) return;
     const st = loadState();
     const now = Date.now();
-    if (st.pending || (st.waf && st.waf.pending) || now - st.lastRunAt >= settings.intervalSeconds * 1000 || st.cursor == null) cycle().catch(() => {});
+    if (st.pending || (st.waf && st.waf.pending) || (st.challenge && st.challenge.pending) || now - st.lastRunAt >= settings.intervalSeconds * 1000 || st.cursor == null) cycle().catch(() => {});
   }, 15_000);
   timer.unref();
 }
@@ -267,6 +299,7 @@ function publicStatus() {
       enabled: settings.pingEnable, url: settings.pingUrl ? hostPath(settings.pingUrl) : null, intervalMinutes: settings.pingIntervalMinutes,
       canTest: !!settings.ready && !!settings.pingUrl, last: pingPublic(st.ping),
     },
+    challenge: challengeEnabled() ? { cursor: st.challenge ? st.challenge.cursor : null, counters: st.challenge ? st.challenge.counters : null, lastError: st.challenge ? st.challenge.lastError : null } : null,
     waf: wafEnabled() ? { cursor: st.waf ? st.waf.cursor : null, counters: st.waf ? st.waf.counters : null, lastError: st.waf ? st.waf.lastError : null } : null,
   };
 }
