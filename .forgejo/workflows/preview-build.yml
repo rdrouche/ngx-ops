@@ -28,11 +28,11 @@ env:
   BRANDING_SITE: https://ngx-ops.net/
   BRANDING_REPO: https://forge.rdr-it.com/ngx-ops/ngx-ops/
   BRANDING_DOC: https://docs.ngx-ops.net/
-  DASHBOARD_VERSION_URL: https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/version-nginx-control
-  NGINX_VERSION_URL: https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/version-nginx
+  DASHBOARD_VERSION_URL: https://forge.rdr-it.com/ngx-ops/meta/raw/branch/main/version-ngx-ops
+  NGINX_VERSION_URL: https://forge.rdr-it.com/ngx-ops/meta/raw/branch/main/version-nginx
   SYNC_REF_URL: https://forge.rdr-it.com/ngx-ops/reference-files
-  ALERTING_URL: https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/alert-message
-  CHANGELOG_URL: https://forge.rdr-it.com/ngx-ops/ngx-ops/raw/branch/main/meta/changelog
+  ALERTING_URL: https://forge.rdr-it.com/ngx-ops/meta/raw/branch/main/alert-message
+  CHANGELOG_URL: https://forge.rdr-it.com/ngx-ops/meta/raw/branch/main/changelog
   INTEL_API_URL: https://intelligence.ngx-ops.net/api/v1/events
 
 jobs:
