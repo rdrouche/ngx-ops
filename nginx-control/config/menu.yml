@@ -39,3 +39,19 @@ docker_autoconfig_menu: auto
 # `enable: true/false` de config/agents.yml (Hotes distants). Desactive par
 # defaut (v12.41.0, opt-in). Valeurs : auto, show, hide.
 agents_menu: auto
+
+# --- v12.72.0 : autres entrees du menu (show par defaut) ----------------------
+# Reglables aussi depuis Systeme > bouton « Menu » (ecrit ce fichier).
+# Valeurs : show, hide (goaccess : auto, hide — auto = affiche si des sources
+# GoAccess sont configurees).
+sync_menu: show
+vhostgen_menu: show
+graph_menu: show
+deploy_menu: show
+blocklists_menu: show
+wafemu_menu: show
+geomap_menu: show
+digest_menu: show
+cache_menu: show
+notifications_menu: show   # reste accessible via la cloche
+goaccess_menu: auto

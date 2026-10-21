@@ -24,6 +24,7 @@ function initMonitorDb() {
   try {
     const { DatabaseSync } = require('node:sqlite');
     db = new DatabaseSync(cfg.MONITOR_DB_PATH);
+    try { db.exec('PRAGMA auto_vacuum = INCREMENTAL'); } catch {} // v12.74.0 (bases neuves)
     db.exec(`
       PRAGMA journal_mode = WAL;
 
@@ -48,6 +49,7 @@ function initMonitorDb() {
       CREATE INDEX IF NOT EXISTS idx_incidents_key ON incidents(target_key, started_at);
     `);
     purgeOld();
+    require('./db-maintenance').register(db, 'monitoring', cfg);
     console.log(`[monitor] DB ready: ${cfg.MONITOR_DB_PATH} (retention: ${cfg.MONITOR_RETENTION_DAYS}d)`);
   } catch (e) {
     console.warn('[monitor] SQLite unavailable — monitoring history will be in-memory only:', e.message);

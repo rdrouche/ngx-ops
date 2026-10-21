@@ -25,7 +25,7 @@ console.log('\ncatalog() — sans thresholds (retro-compatibilite : jamais une e
 check('config: null pour chaque regle integree quand aucun threshold n est fourni', () => {
   const rm = new RulesManager(fakeStore());
   const cat = rm.catalog(EXPLANATIONS);
-  assert.strictEqual(cat.builtins.length, 6);
+  assert.strictEqual(cat.builtins.length, 7);
   for (const b of cat.builtins) assert.strictEqual(b.config, null, `${b.key} devrait avoir config: null`);
   assert.ok(cat.processing && typeof cat.processing === 'object', 'processing doit toujours etre present, meme sans thresholds');
 });
@@ -92,6 +92,109 @@ check('explique la regle multi-vhost de l opt-out (TOUS les vhosts touches doive
   const cat = rm.catalog(EXPLANATIONS);
   assert.ok(/TOUS/.test(cat.processing.vhostOptOut));
   assert.ok(/plusieurs vhosts/i.test(cat.processing.vhostOptOut));
+});
+
+console.log('\n"Blocklist a la CrowdSec" par regle (v12.50.0) — regles integrees');
+check('getBlocklistConfig() par defaut : threshold null (desactive), fenetre 1440 min, remediation false', () => {
+  const rm = new RulesManager(fakeStore());
+  assert.deepStrictEqual(rm.getBlocklistConfig('flood'), {
+    threshold: null, windowMinutes: 1440, remediation: false, remediationMinutes: null, remediationType: 'block',
+  });
+});
+check('setBlocklistConfig() valide, persiste et se relit via getBlocklistConfig()', () => {
+  const store = fakeStore();
+  const rm = new RulesManager(store);
+  const result = rm.setBlocklistConfig('flood', { threshold: 5, windowMinutes: 60, remediation: true, remediationMinutes: 120 });
+  assert.strictEqual(result.ok, true);
+  assert.deepStrictEqual(rm.getBlocklistConfig('flood'), { threshold: 5, windowMinutes: 60, remediation: true, remediationMinutes: 120, remediationType: 'block' });
+  // persiste : un nouveau RulesManager sur le meme store retrouve la config
+  const rm2 = new RulesManager(store);
+  assert.deepStrictEqual(rm2.getBlocklistConfig('flood'), { threshold: 5, windowMinutes: 60, remediation: true, remediationMinutes: 120, remediationType: 'block' });
+  // et l etat enabled/disabled de la regle (non touche par setBlocklistConfig) survit aussi
+  assert.strictEqual(rm2.isEnabled('flood'), true);
+});
+check('setBlocklistConfig() : threshold/windowMinutes/remediationMinutes invalides -> erreur explicite, rien de persiste', () => {
+  const rm = new RulesManager(fakeStore());
+  assert.strictEqual(rm.setBlocklistConfig('flood', { threshold: 0 }).ok, false);
+  assert.strictEqual(rm.setBlocklistConfig('flood', { windowMinutes: -1 }).ok, false);
+  assert.strictEqual(rm.setBlocklistConfig('flood', { remediationMinutes: 0 }).ok, false);
+  assert.strictEqual(rm.setBlocklistConfig('inconnue', { threshold: 5 }).ok, false);
+  // rien n a ete altere par les tentatives invalides
+  assert.deepStrictEqual(rm.getBlocklistConfig('flood'), {
+    threshold: null, windowMinutes: 1440, remediation: false, remediationMinutes: null, remediationType: 'block',
+  });
+});
+check('migration : un rule_state pre-v12.50.0 (booleen brut) est repris comme enabled, blocklist par defaut', () => {
+  const store = fakeStore();
+  store.setState('rule_state', { flood: false, scan: true });
+  const rm = new RulesManager(store);
+  assert.strictEqual(rm.isEnabled('flood'), false);
+  assert.strictEqual(rm.isEnabled('scan'), true);
+  assert.deepStrictEqual(rm.getBlocklistConfig('flood'), {
+    threshold: null, windowMinutes: 1440, remediation: false, remediationMinutes: null, remediationType: 'block',
+  });
+});
+check('toggle() ne touche jamais a la config blocklist deja definie', () => {
+  const rm = new RulesManager(fakeStore());
+  rm.setBlocklistConfig('flood', { threshold: 3 });
+  rm.toggle('flood', false);
+  assert.strictEqual(rm.isEnabled('flood'), false);
+  assert.strictEqual(rm.getBlocklistConfig('flood').threshold, 3);
+});
+
+console.log('\nlistBlocklistRules() — fusion regles integrees + personnalisees ayant opte');
+check('seules les regles avec threshold configure apparaissent (integrees ET personnalisees)', () => {
+  const rm = new RulesManager(fakeStore());
+  rm.setBlocklistConfig('flood', { threshold: 5, remediation: true });
+  rm.setCustomYaml([
+    'rules:',
+    '  - id: 100',
+    '    name: admin_probe',
+    '    min_matches: 10',
+    '    path_hint: "/wp-admin"',
+    '    blocklist_threshold: 3',
+    '    blocklist_remediation: true',
+    '    blocklist_remediation_minutes: 30',
+  ].join('\n'));
+  const list = rm.listBlocklistRules();
+  assert.strictEqual(list.length, 2);
+  const flood = list.find(r => r.key === 'flood');
+  const custom = list.find(r => r.key === 'custom_100');
+  assert.deepStrictEqual(flood, { id: 3, key: 'flood', name: 'flood', custom: false, threshold: 5, windowMinutes: 1440, remediation: true, remediationMinutes: null, remediationType: 'block' });
+  assert.deepStrictEqual(custom, { id: 100, key: 'custom_100', name: 'admin_probe', custom: true, threshold: 3, windowMinutes: 1440, remediation: true, remediationMinutes: 30, remediationType: 'block' });
+});
+check('aucune regle opt-in -> liste vide', () => {
+  const rm = new RulesManager(fakeStore());
+  assert.deepStrictEqual(rm.listBlocklistRules(), []);
+});
+
+console.log('\ncatalog() expose la config blocklist de chaque regle');
+check('chaque regle integree porte son bloc "blocklist" (defaut ou configure)', () => {
+  const rm = new RulesManager(fakeStore());
+  rm.setBlocklistConfig('scan', { threshold: 8 });
+  const cat = rm.catalog(EXPLANATIONS);
+  const scan = cat.builtins.find(b => b.key === 'scan');
+  const flood = cat.builtins.find(b => b.key === 'flood');
+  assert.strictEqual(scan.blocklist.threshold, 8);
+  assert.strictEqual(flood.blocklist.threshold, null);
+});
+
+check('remediationType : challenge persiste, valeur inconnue refusee, exposee par listBlocklistRules()', () => {
+  const store = fakeStore();
+  const rm = new RulesManager(store);
+  assert.strictEqual(rm.setBlocklistConfig('flood', { threshold: 3, remediation: true, remediationType: 'captcha' }).ok, false);
+  assert.strictEqual(rm.setBlocklistConfig('flood', { threshold: 3, remediation: true, remediationType: 'challenge' }).ok, true);
+  assert.strictEqual(new RulesManager(store).getBlocklistConfig('flood').remediationType, 'challenge');
+  assert.strictEqual(rm.listBlocklistRules().find(r => r.key === 'flood').remediationType, 'challenge');
+  rm.setCustomYaml(`rules:
+  - id: 120
+    name: x
+    min_matches: 2
+    blocklist_threshold: 1
+    blocklist_remediation: true
+    blocklist_remediation_type: challenge
+`);
+  assert.strictEqual(rm.listBlocklistRules().find(r => r.key === 'custom_120').remediationType, 'challenge');
 });
 
 console.log(`\n${pass} pass, ${fail} fail`);

@@ -9,7 +9,7 @@
  * lib/docker.js or the filesystem for this feature (composition-root split
  * already used by every other feature in this project).
  *
- * A remote agent is, by construction, further from Nginx Control's trust
+ * A remote agent is, by construction, further from NGX Ops's trust
  * boundary than a Docker label on the SAME host (Partie 1): the manifest
  * arrives over the network, authenticated only by a bearer token the agent
  * holds. Every value here goes through the exact same anchored-regex
@@ -547,6 +547,18 @@ function generateAgentVhostContent(validated, serverNames, listen, meta = {}) {
       // can attach this header — features/agent-tunnel.js refuses to route
       // any request that lacks it, no matter what Host it carries.
       lines.push(`        proxy_set_header X-NC-Tunnel "${meta.tunnelSecret}";`);
+    }
+    if (isRelay) {
+      // v12.72.0 : WebSocket (et SSE) a travers le relais. Sans ces lignes nginx parle en HTTP/1.0 a
+      // l'agent et supprime l'en-tete Upgrade : tout upgrade echouait (l'agent Go sait pourtant les relayer).
+      // « Connection: upgrade » constant (pas de map $connection_upgrade, a definir cote http{}) ; le
+      // timeout de lecture evite de couper une connexion WebSocket inactive apres 60 s. Le mode tunnel
+      // reste sans WebSocket (JSON tamponne, voir README).
+      lines.push('        proxy_http_version 1.1;');
+      lines.push('        proxy_set_header Upgrade $http_upgrade;');
+      lines.push('        proxy_set_header Connection "upgrade";');
+      lines.push('        proxy_read_timeout 3600s;');
+      lines.push('        proxy_send_timeout 3600s;');
     }
     if (isRelay && validated.relayScheme === 'https') {
       lines.push('        # Le saut agent est en HTTPS avec un certificat probablement');

@@ -384,6 +384,15 @@ check('mode relay (https) -> proxy_ssl_verify off ajoute (saut agent probablemen
   assert.ok(content.includes('proxy_ssl_verify off;'));
 });
 
+check('v12.72.0 : mode relay -> en-tetes WebSocket (HTTP/1.1, Upgrade, Connection) ; tunnel et direct inchanges', () => {
+  const rv = validateManifestVhost(baseVhost({ mode: 'relay' }));
+  const relay = generateAgentVhostContent(rv, rv.serverNames, rv.listen, { agentId: 'a', agentName: 'v', relayTarget: 'http://198.51.100.5:34443' });
+  for (const l of ['proxy_http_version 1.1;', 'proxy_set_header Upgrade $http_upgrade;', 'proxy_set_header Connection "upgrade";', 'proxy_read_timeout 3600s;']) assert.ok(relay.includes(l), l);
+  const tv = validateManifestVhost(baseVhost({ mode: 'tunnel' }));
+  const tunnel = generateAgentVhostContent(tv, tv.serverNames, tv.listen, { agentId: 'a', agentName: 'v', tunnelTarget: 'http://nginx-dashboard:3000', tunnelSecret: 'x' });
+  assert.ok(!tunnel.includes('Upgrade $http_upgrade'), 'pas de WebSocket en tunnel (JSON tamponne)');
+});
+
 console.log('\nvalidateMetrics()');
 check('metrics absentes -> null', () => {
   assert.strictEqual(validateMetrics(undefined), null);

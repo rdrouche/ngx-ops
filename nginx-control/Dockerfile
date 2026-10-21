@@ -69,6 +69,10 @@ ENV CHANGELOG_URL=${CHANGELOG_URL}
 # opt-in switch (also overridable via config/features.yml) — an operator can
 # bake this URL into a shared base image and still have each instance decide
 # for itself whether to actually poll it, without touching the URL.
+# NGX Ops Intelligence (v12.69.0) : URL d'envoi des alertes de l'analyse, injectee au build
+# (surchargeable par `api_url` dans config/intelligence.yml). Vide = aucun envoi possible.
+ARG INTEL_API_URL=""
+ENV INTEL_API_URL=${INTEL_API_URL}
 ARG ALERTING_URL=""
 ENV ALERTING_URL=${ALERTING_URL}
 ARG ALERTING_ENABLE=""
@@ -84,6 +88,21 @@ ENV ALERTING_POLL_INTERVAL_MIN=${ALERTING_POLL_INTERVAL_MIN}
 # you push your own build, still overridable at runtime via .env.
 ARG ANALYZER_DEFAULT_IMAGE="forge.rdr-it.com/dockerfiles/nginx-analyzer:latest"
 ENV ANALYZER_DEFAULT_IMAGE=${ANALYZER_DEFAULT_IMAGE}
+# WAF emule (conteneur ngx-waf, config/waf.yml) : meme image que l'analyseur (2e binaire
+# /usr/local/bin/waf). Vide = ANALYZER_DEFAULT_IMAGE ; config/waf.yml (container_image) reste prioritaire.
+ARG WAF_DEFAULT_IMAGE=""
+ENV WAF_DEFAULT_IMAGE=${WAF_DEFAULT_IMAGE}
+# Agent Go distant (nginx-agent : autorisation Docker / reverse proxy distant) : image proposee par defaut dans le
+# kit de deploiement des agents (.env + compose.yml). Nom sans tag ; surchargeable a l'execution (AGENT_DEFAULT_IMAGE).
+ARG AGENT_DEFAULT_IMAGE="forge.rdr-it.com/dockerfiles/nginx-control-agent"
+ENV AGENT_DEFAULT_IMAGE=${AGENT_DEFAULT_IMAGE}
+# Conteneur du challenge navigateur (v12.63.0) : image maison nginx-challenge et
+# image Anubis. Memes regles que ci-dessus : fixables au build, surchargeables a
+# l'execution, et config/challenge.yml (container_image) reste prioritaire.
+ARG CHALLENGE_DEFAULT_IMAGE="forge.rdr-it.com/dockerfiles/nginx-challenge:latest"
+ENV CHALLENGE_DEFAULT_IMAGE=${CHALLENGE_DEFAULT_IMAGE}
+ARG ANUBIS_DEFAULT_IMAGE="ghcr.io/techarohq/anubis:latest"
+ENV ANUBIS_DEFAULT_IMAGE=${ANUBIS_DEFAULT_IMAGE}
 
 # ─── Branding ─────────────────────────────────────────────────────────────────
 ARG BRANDING_KOFI=""

@@ -30,6 +30,11 @@ check('les overrides demandes sont bien appliques (geomap -> map, logs -> live-l
   assert.strictEqual(R.SLUG_TO_PAGE.map, 'geomap');
   assert.strictEqual(R.SLUG_TO_PAGE['live-logs'], 'logs');
 });
+check('WAF emule : page wafemu -> /waf-emu, sans toucher a la page WAF (ModSecurity) existante', () => {
+  assert.strictEqual(R.PAGE_TO_SLUG.wafemu, 'waf-emu');
+  assert.strictEqual(R.SLUG_TO_PAGE['waf-emu'], 'wafemu');
+  assert.strictEqual(R.SLUG_TO_PAGE.waf, 'waf');
+});
 check('une page sans override garde son nom tel quel en slug', () => {
   assert.strictEqual(R.PAGE_TO_SLUG.overview, 'overview');
   assert.strictEqual(R.PAGE_TO_SLUG.waf, 'waf');

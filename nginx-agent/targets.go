@@ -8,8 +8,8 @@ import (
 )
 
 // Multi-master (v12.21.0, design doc "Partie 2 — avance" §Multi-master) : un
-// seul agent peut pousser vers PLUSIEURS Nginx Control independants (typique
-// DMZ + LAN), chacun avec sa propre approbation/jeton — deux Nginx Control
+// seul agent peut pousser vers PLUSIEURS NGX Ops independants (typique
+// DMZ + LAN), chacun avec sa propre approbation/jeton — deux NGX Ops
 // ne se connaissent jamais entre eux, donc deux identites d'agent distinctes,
 // meme si c'est le meme processus qui les porte toutes les deux.
 //
@@ -43,7 +43,7 @@ type targetConfig struct {
 // le nom d'une cible reelle). dashboardUrl et stateFile sont obligatoires
 // pour chaque entree : aucune valeur par defaut devinee ici, une cible mal
 // remplie doit echouer au demarrage plutot que de pousser silencieusement
-// vers le mauvais Nginx Control (ou vers un fichier d'etat partage par
+// vers le mauvais NGX Ops (ou vers un fichier d'etat partage par
 // accident avec une autre cible).
 func loadTargetsFile(path string) ([]targetConfig, error) {
 	data, err := os.ReadFile(path)

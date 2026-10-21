@@ -40,6 +40,8 @@ class Store {
       fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
       const { DatabaseSync } = require('node:sqlite');
       this.db = new DatabaseSync(this.dbPath);
+      // v12.74.0 : nouvelle base -> auto_vacuum incremental (doit preceder la creation des tables).
+      try { this.db.exec('PRAGMA auto_vacuum = INCREMENTAL'); } catch {}
       this.db.exec(`
         PRAGMA journal_mode = WAL;
 
@@ -356,6 +358,20 @@ class Store {
       WHERE bucket >= ? AND bucket < ? ${where}
       GROUP BY country ORDER BY requests DESC
     `).all(...params);
+  }
+
+  /**
+   * v12.74.0 : octets envoyes par vhost et par heure (grains minute + hour, sans chevauchement
+   * puisque le rollup supprime les minutes une fois agregees). Sert a amorcer la baseline data.
+   */
+  hourlyBytes(fromMs, toMs) {
+    if (!this.db) return [];
+    return this.db.prepare(`
+      SELECT (bucket / 3600) * 3600 AS hour, vhost, SUM(bytes) AS bytes
+      FROM traffic
+      WHERE grain IN ('minute', 'hour') AND bucket >= ? AND bucket < ?
+      GROUP BY (bucket / 3600), vhost
+    `).all(Math.floor(fromMs / 1000), Math.floor(toMs / 1000)).map(r => ({ hourMs: r.hour * 1000, vhost: r.vhost, bytes: r.bytes }));
   }
 
   /** Traffic grouped by vhost over a window. */
@@ -1026,9 +1042,18 @@ class Store {
         rows: Object.fromEntries(t.map(r => [r.grain, r.n])),
         alerts: a,
         dbBytes: size,
+        dbFreeBytes: (() => { try { return require('./db-maintenance').freeStats(this.db).freeBytes; } catch { return 0; } })(),
       };
     } catch { return { persistent: true, error: true }; }
   }
+
+  /** v12.74.0 : compactage au demarrage (voir lib/db-maintenance.js). */
+  compactOnStart(opts) {
+    if (!this.db) return null;
+    return require('./db-maintenance').compactIfNeeded(this.db, { label: 'analyzer', ...opts });
+  }
+  /** v12.74.0 : entretien periodique (checkpoint WAL + incremental_vacuum). */
+  maintain() { return this.db ? require('./db-maintenance').maintain(this.db) : null; }
 
   close() { try { this.flush(); this.db?.close(); } catch {} }
 }

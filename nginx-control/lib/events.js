@@ -27,6 +27,7 @@ function initEventsDb() {
   try {
     const { DatabaseSync } = require('node:sqlite');
     eventsDb = new DatabaseSync(cfg.EVENTS_DB_PATH);
+    try { eventsDb.exec('PRAGMA auto_vacuum = INCREMENTAL'); } catch {} // v12.74.0 (bases neuves)
     eventsDb.exec(`
       CREATE TABLE IF NOT EXISTS events (
         id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,6 +42,7 @@ function initEventsDb() {
     initDigestsTable();
     purgeOldEvents();
     purgeOldDigests();
+    require('./db-maintenance').register(eventsDb, 'events', cfg);
     console.log(`[events] DB ready: ${cfg.EVENTS_DB_PATH} (retention: ${cfg.EVENTS_RETENTION_DAYS}d)`);
   } catch (e) {
     console.warn('[events] SQLite unavailable — events will be in-memory only:', e.message);
@@ -223,6 +225,9 @@ function setState(key, value) {
   } catch (e) { console.warn('[events] setState:', e.message); }
 }
 
+/** Poignee SQLite partagee (null si indisponible) : lib/blocklist-history.js y ajoute sa propre table. */
+function getDb() { return eventsDb; }
+
 function clearEvents() {
   eventLog.length = 0;
   if (eventsDb) { try { eventsDb.exec('DELETE FROM events'); } catch { /* ignore */ } }
@@ -247,6 +252,7 @@ function fireWebhook(wh, payload) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': cfg.HTTP_USER_AGENT,
         'Content-Length': Buffer.byteLength(body),
         // v12.32.0: getWebhookSecret() also returns a value generated from
         // the UI (page Systeme) when WEBHOOK_SECRET is not set in .env —
@@ -291,6 +297,6 @@ function recentEvents(limit = MAX_LOG, offset = 0) {
 module.exports = {
   MAX_LOG, eventLog, webhooks,
   initEventsDb, purgeOldEvents, persistEvent, queryEvents, clearEvents,
-  logEvent, recentEvents, fireWebhook, getState, setState,
+  logEvent, recentEvents, fireWebhook, getState, setState, getDb,
   saveDigest, listDigests, getDigest, getLatestDigest, deleteDigest, purgeOldDigests,
 };

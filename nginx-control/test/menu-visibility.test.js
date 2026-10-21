@@ -199,6 +199,46 @@ console.log('\nresolveMenuVisibility() — resolution complete');
     fs.unlinkSync(path.join(tmpConfigDir, 'agents.yml'));
   });
 
+  console.log('\nv12.72.0 — nouveaux items + formulaire (saveMenuForm / getMenuForm)');
+  await checkAsync('nouveaux items : defaut visibles (goaccess auto)', async () => {
+    removeMenuYml();
+    for (const k of ['MENU_SYNC','MENU_GRAPH','MENU_GOACCESS']) delete process.env[k];
+    const { resolveMenuVisibility } = freshMenuVisibility();
+    const v = await resolveMenuVisibility('nginx:1.27');
+    for (const k of ['sync','vhostgen','graph','deploy','blocklists','wafemu','geomap','digest','goaccess']) assert.strictEqual(v[k].visible, true, k);
+    assert.strictEqual(v.goaccess.mode, 'auto');
+  });
+  check('saveMenuForm : conserve commentaires, remplace et ajoute', () => {
+    writeMenuYml('# commentaire\nwaf_menu: auto # x\n');
+    const { saveMenuForm } = freshMenuVisibility();
+    const r = saveMenuForm({ waf: 'hide', sync: 'hide' });
+    assert.strictEqual(r.ok, true);
+    const t = fs.readFileSync(path.join(tmpConfigDir, 'menu.yml'), 'utf8');
+    assert.ok(t.startsWith('# commentaire\nwaf_menu: hide\n'));
+    assert.ok(/^sync_menu: hide$/m.test(t));
+  });
+  check('saveMenuForm : cle inconnue / valeur invalide / __proto__ rejetees, rien ecrit', () => {
+    writeMenuYml('waf_menu: auto\n');
+    const { saveMenuForm } = freshMenuVisibility();
+    assert.strictEqual(saveMenuForm({ foo: 'hide' }).ok, false);
+    assert.strictEqual(saveMenuForm({ waf: 'nope' }).ok, false);
+    assert.strictEqual(saveMenuForm({ goaccess: 'show' }).ok, false);
+    assert.strictEqual(saveMenuForm({ constructor: 'hide' }).ok, false);
+    assert.strictEqual(saveMenuForm(null).ok, false);
+    assert.strictEqual(fs.readFileSync(path.join(tmpConfigDir, 'menu.yml'), 'utf8'), 'waf_menu: auto\n');
+  });
+  await checkAsync('saveMenuForm : prise en compte immediate + locked si ENV', async () => {
+    removeMenuYml();
+    const m = freshMenuVisibility();
+    m.saveMenuForm({ geomap: 'hide' });
+    assert.strictEqual((await m.resolveMenuVisibility('nginx:1.27')).geomap.visible, false);
+    process.env.MENU_GEOMAP = 'show';
+    const f = m.getMenuForm().find(i => i.id === 'geomap');
+    assert.strictEqual(f.locked, true); assert.strictEqual(f.mode, 'show'); assert.strictEqual(f.yamlMode, 'hide');
+    delete process.env.MENU_GEOMAP;
+    removeMenuYml();
+  });
+
   console.log(`\n${pass} pass, ${fail} fail`);
   process.exit(fail ? 1 : 0);
 })();

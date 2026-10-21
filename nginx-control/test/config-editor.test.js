@@ -29,9 +29,9 @@ function freshEnv() {
 console.log('\nliste fixe des fichiers geres');
 (() => {
   const { CE } = freshEnv();
-  check('exactement les treize fichiers geres par l editeur generique', () => {
+  check('exactement les quinze fichiers geres par l editeur generique', () => {
     const keys = CE.FILES.map(f => f.key).sort();
-    assert.deepStrictEqual(keys, ['agents', 'analyzer', 'blocklists', 'certbot', 'certbot-dns', 'crowdsec', 'deploy-tokens', 'docker-autoconfig', 'error-pages', 'geoipupdate', 'git', 'goaccess', 'godns']);
+    assert.deepStrictEqual(keys, ['agents', 'analyzer', 'blocklists', 'certbot', 'certbot-dns', 'challenge', 'crowdsec', 'deploy-tokens', 'docker-autoconfig', 'error-pages', 'geoipupdate', 'git', 'goaccess', 'godns', 'intelligence', 'waf']);
   });
   check('aucun chemin en dehors de CONFIG_DIR', () => {
     for (const f of CE.FILES) {

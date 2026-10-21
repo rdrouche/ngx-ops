@@ -39,7 +39,9 @@ async function loadLogFiles() {
   const typeLabel = { access: 'Accès', error: 'Erreur', stream: 'Stream' };
   const typeColor = { access: 'var(--green)', error: 'var(--red)', stream: 'var(--blue)' };
 
-  el.innerHTML = Object.entries(byType).map(([type, files]) => `
+  const prevSearch = (document.getElementById('lf-search') || {}).value || '';
+  const searchBox = `<div style="padding:8px;position:sticky;top:0;background:var(--bg2);z-index:1"><input class="log-filter" id="lf-search" type="search" autocomplete="off" style="width:100%" oninput="logFilterFiles()" placeholder="${h(t('logviewer.search'))}"></div>`;
+  el.innerHTML = searchBox + Object.entries(byType).map(([type, files]) => `
     <div class="log-file-section">${typeLabel[type] || type}</div>
     ${files.map(f => `
       <div class="log-file-item" id="lfi-${(()=>{const i=logFileIndex++;logFileMap[i]=f;return i;})()}" onclick="openLogFile(this.id.slice(4))">
@@ -48,6 +50,23 @@ async function loadLogFiles() {
         <span class="lf-size">${fmtB(f.size)}</span>
       </div>`).join('')}
   `).join('');
+  const sb = document.getElementById('lf-search');
+  if (sb) { sb.value = prevSearch; logFilterFiles(); }
+}
+
+// v12.72.1 : recherche dans la liste des fichiers de logs (nom/chemin), comme pour les fichiers de conf.
+function logFilterFiles() {
+  const q = ((document.getElementById('lf-search') || {}).value || '').trim().toLowerCase();
+  let section = null, shown = 0;
+  const flush = () => { if (section) section.style.display = (q && !shown) ? 'none' : ''; };
+  document.querySelectorAll('#log-file-list > .log-file-section, #log-file-list > .log-file-item').forEach(n => {
+    if (n.classList.contains('log-file-section')) { flush(); section = n; shown = 0; return; }
+    const f = logFileMap[parseInt(n.id.slice(4))];
+    const ok = !q || (f && (f.name + ' ' + f.path).toLowerCase().includes(q));
+    n.style.display = ok ? '' : 'none';
+    if (ok) shown++;
+  });
+  flush();
 }
 
 async function openLogFile(idxStr) {

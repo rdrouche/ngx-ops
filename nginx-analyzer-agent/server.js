@@ -85,11 +85,23 @@ const CONFIG = {
   // than reusing FLOOD_MIN_REQUESTS's per-vhost figure.
   countrySigma:       int('COUNTRY_SIGMA_THRESHOLD', 6),
   countryMinRequests: int('COUNTRY_MIN_REQUESTS', 300),
+  // Data-volume alerting (v12.74.0) — bytes sent to clients per vhost and hour
+  // (body_bytes_sent). Same Baseline engine; the floor is expressed in bytes.
+  dataSigma:    int('DATA_SIGMA_THRESHOLD', 6),
+  dataMinBytes: int('DATA_MIN_BYTES', 50 * 1024 * 1024),
+  // Start-up SQLite maintenance (v12.74.0): VACUUM when enough free space is reclaimable.
+  dbCompactOnStart: str('DB_COMPACT_ON_START', 'auto'),
+  dbCompactMinFreeMb: int('DB_COMPACT_MIN_FREE_MB', 16),
+  dbCompactMinFreePct: int('DB_COMPACT_MIN_FREE_PCT', 20),
 };
+
+const { parseIgnoreStatus } = require('./lib/ignore-status');
+const IGNORE_STATUS = parseIgnoreStatus(str('DETECT_IGNORE_STATUS'));
 
 const bool = (n, d) => { const v = str(n); return v === '' ? d : v === 'true' || v === '1'; };
 
 const store = new Store(CONFIG.dbPath);
+store.compactOnStart({ mode: CONFIG.dbCompactOnStart, minFreeMb: CONFIG.dbCompactMinFreeMb, minFreePct: CONFIG.dbCompactMinFreePct });
 
 // Rule enable/disable + custom rules + per-vhost opt-out — see lib/rules-manager.js.
 // Env vars only seed the very first boot; after that, the dashboard's live
@@ -101,6 +113,7 @@ const rulesManager = new RulesManager(store, {
   scraping: bool('RULE_SCRAPING_ENABLE', true),
   volumetric: bool('RULE_VOLUMETRIC_ENABLE', true),
   country_traffic: bool('RULE_COUNTRY_TRAFFIC_ENABLE', true),
+  data_volume: bool('RULE_DATA_VOLUME_ENABLE', true),
 });
 
 const detector = new Detector({
@@ -131,6 +144,34 @@ const countryBaseline = new Baseline(
   store.getState('country_baseline'),
 );
 
+// v12.74.0 — data volume (bytes sent) per vhost: same engine, metrics.requests carries bytes.
+const dataBaseline = new Baseline(
+  { learningDays: CONFIG.learningDays, sigmaThreshold: CONFIG.dataSigma,
+    minAbsoluteRequests: CONFIG.dataMinBytes,
+    enable: rulesManager.isEnabled('data_volume') },
+  store.getState('data_baseline'),
+);
+
+// Amorcage depuis l historique deja stocke (octets par vhost et par heure, ~30 j) : sans cela la
+// baseline data repartirait de zero alors que les requetes ont deja des semaines d apprentissage.
+(function seedDataBaseline() {
+  if (dataBaseline.buckets.size > 0) return; // deja appris : ne pas ecraser
+  try {
+    const now = Date.now();
+    // Exclut les 2 dernieres heures : elles seront fermees par le flux normal (pas de double comptage).
+    const upTo = Math.floor(now / 3_600_000) * 3_600_000 - 3_600_000;
+    const rows = store.hourlyBytes(now - 30 * 86_400_000, upTo);
+    if (!rows.length) return;
+    rows.sort((a, b) => a.hourMs - b.hourMs);
+    for (const r of rows) {
+      if (r.bytes > 0) dataBaseline.observe(r.vhost, r.hourMs, { requests: r.bytes, errors: 0, distinctIps: 0, distinctPaths: 0 });
+    }
+    dataBaseline.startedAt = rows[0].hourMs;
+    store.setState('data_baseline', dataBaseline.toJSON());
+    console.log(`[baseline] data amorcee depuis l historique : ${rows.length} heures-vhost`);
+  } catch (e) { console.warn('[baseline] amorcage data impossible:', e.message); }
+})();
+
 // Structural signals for each in-progress hour, kept alongside the volume so
 // the baseline can tell an audience apart from a flood.
 //
@@ -148,9 +189,10 @@ function currentHour(ts) { return hourlyByHour.hourOf(ts); }
 
 function trackStructure(entry) {
   hourlyByHour.add(entry.ts, entry.vhost,
-    () => ({ requests: 0, errors: 0, ips: new Set(), paths: new Set() }),
+    () => ({ requests: 0, errors: 0, bytes: 0, ips: new Set(), paths: new Set() }),
     m => {
       m.requests++;
+      m.bytes += entry.bytes > 0 ? entry.bytes : 0;
       if (entry.status >= 400) m.errors++;
       if (m.ips.size   < 20_000) m.ips.add(entry.ip);
       // entry.path is null for a bare "-" request (see lib/parse.js) — not a
@@ -181,8 +223,34 @@ function flushHourlyBucket(hour, byVhost) {
       console.log(`[alert] volumetric ${vhost}: ${result.summary}`);
     }
     baseline.observe(vhost, hour, metrics);
+
+    // v12.74.0 — data volume: bytes sent per vhost per hour.
+    const dm = { requests: m.bytes, errors: m.errors, distinctIps: m.ips.size, distinctPaths: m.paths.size };
+    const dr = dataBaseline.check(vhost, hour, dm);
+    if (dr && dr.anomaly && dataBaseline.cfg.enable
+        && !rulesManager.ruleSuppressedForVhost(vhost, RULE_IDS.data_volume)) {
+      const summary = dataSummary(dr, vhost);
+      store.addAlert({
+        type: 'data_volume', severity: dr.severity, summary,
+        explanation: EXPLANATIONS.data_volume,
+        evidence: { ...dr, summary, vhost, unit: 'bytes', requests: m.requests },
+      });
+      console.log(`[alert] data_volume ${vhost}: ${summary}`);
+    }
+    dataBaseline.observe(vhost, hour, dm);
   }
   store.setState('baseline', baseline.toJSON());
+  store.setState('data_baseline', dataBaseline.toJSON());
+}
+
+function fmtBytes(n) {
+  const u = ['o', 'Ko', 'Mo', 'Go', 'To']; let i = 0; let v = Number(n) || 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? String(Math.round(v)) : v.toFixed(v >= 100 ? 0 : 1)) + ' ' + u[i];
+}
+
+function dataSummary(r, vhost) {
+  return `Volume de donnees anormal sur ${vhost} : ${fmtBytes(r.observed)} envoyes en 1 h contre ${fmtBytes(r.expected)} attendus (${r.deviation} ecarts)`;
 }
 
 /**
@@ -271,15 +339,20 @@ const tailer = new Tailer({
   store,
   pollMs: CONFIG.pollMs,
   onEntry(entry) {
-    detector.add(entry);
-    trackStructure(entry);
+    // Statut ignore (ex. 444 : deja bloque par un autre mecanisme) : ni regles ni baseline,
+    // mais le trafic reste enregistre plus bas (statistiques, hits de blocklist).
+    const ignoredStatus = IGNORE_STATUS.has(entry.status);
+    if (!ignoredStatus) {
+      detector.add(entry);
+      trackStructure(entry);
+    }
     const country = geoip.countryOf(entry.ip);
     // No resolvable country (GeoIP absent, private/unroutable address, lookup
     // miss) means there is nothing to attribute this request to for a
     // per-country baseline — same reasoning as the live map below skipping
     // recentGeoEvents in that case, rather than inventing a "??" bucket
     // that would just accumulate everything GeoIP cannot place.
-    if (country) trackCountryStructure(entry, country);
+    if (country && !ignoredStatus) trackCountryStructure(entry, country);
     store.record(entry, country);
 
     // Bot/human classification is independent of GeoIP — a deployment with
@@ -379,6 +452,9 @@ every(CONFIG.rollupMs, () => {
   store.purgeBlocklistHits(Date.now() - CONFIG.blocklistRetentionDays * 86_400_000);
 }, 'rollup');
 
+// v12.74.0 : recupere l espace libere par les purges (checkpoint WAL + incremental_vacuum), toutes les 6 h.
+every(6 * 3_600_000, () => { store.maintain(); }, 'db-maintain');
+
 // Fix (audit finding ANA-07): close out hour buckets on their own schedule,
 // independent of when entries happen to arrive — see hourlyByHour's comment
 // above for why. Five minutes is frequent enough that a closed hour reaches
@@ -463,6 +539,10 @@ function tokensMatch(a, b) {
   return require('crypto').timingSafeEqual(bufA, bufB);
 }
 
+function baselineByType(type) {
+  return type === 'country' ? countryBaseline : type === 'data' ? dataBaseline : baseline;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
@@ -485,6 +565,7 @@ const server = http.createServer(async (req, res) => {
           logsDir: CONFIG.logsDir, dbPath: CONFIG.dbPath,
           learningDays: CONFIG.learningDays, sigma: CONFIG.sigma,
           countrySigma: CONFIG.countrySigma, countryMinRequests: CONFIG.countryMinRequests,
+          dataSigma: CONFIG.dataSigma, dataMinBytes: CONFIG.dataMinBytes,
         },
         tail: tailer.status(),
         wafTail: wafStatus,
@@ -508,6 +589,7 @@ const server = http.createServer(async (req, res) => {
         detector: detector.stats(),
         baseline: baseline.stats(),
         countryBaseline: countryBaseline.stats(),
+        dataBaseline: dataBaseline.stats(),
         store: store.stats(),
         geoip: geoip.status(),
         memoryMb: +(process.memoryUsage().rss / 1048576).toFixed(1),
@@ -694,6 +776,7 @@ const server = http.createServer(async (req, res) => {
         scraping: detector.cfg.scraping,
         volumetric: baseline.cfg,
         country_traffic: countryBaseline.cfg,
+        data_volume: dataBaseline.cfg,
       }));
     }
 
@@ -710,8 +793,38 @@ const server = http.createServer(async (req, res) => {
         baseline.cfg.enable = enable;
       } else if (key === 'country_traffic') {
         countryBaseline.cfg.enable = enable;
+      } else if (key === 'data_volume') {
+        dataBaseline.cfg.enable = enable;
       }
       return send(res, 200, { ok: true, key, enabled: enable });
+    }
+
+    /**
+     * "Blocklist a la CrowdSec" (v12.50.0) : config threshold/window/
+     * remediation/remediation_minutes de CHAQUE regle integree ayant opte
+     * (threshold configure) + de chaque regle personnalisee (deja portee par
+     * sa propre entree YAML, voir lib/rules-yaml.js) — voir
+     * RulesManager.listBlocklistRules(). C est tout ce dont
+     * nginx-dashboard/features/blocklists.js a besoin pour calculer les IP
+     * suspectes, sans avoir a distinguer regle integree/personnalisee.
+     */
+    if (p === '/api/rules/blocklist-config' && req.method === 'GET') {
+      return send(res, 200, { rules: rulesManager.listBlocklistRules() });
+    }
+
+    /** Set one builtin rule's blocklist threshold/window/remediation/remediation duration. */
+    if (p === '/api/rules/blocklist' && req.method === 'POST') {
+      const key = url.searchParams.get('key');
+      const body = await readJsonBody(req);
+      const result = rulesManager.setBlocklistConfig(key, {
+        threshold: body?.threshold,
+        windowMinutes: body?.windowMinutes,
+        remediation: body?.remediation === true,
+        remediationMinutes: body?.remediationMinutes,
+        remediationType: body?.remediationType,
+      });
+      if (!result.ok) return send(res, 400, result);
+      return send(res, 200, { ok: true, key, value: result.value });
     }
 
     /** Raw YAML of the custom rules, for the editor's textarea. */
@@ -770,6 +883,22 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/api/baseline/country') {
       return send(res, 200, countryBaseline.stats());
+    }
+
+    if (p === '/api/baseline/data') {
+      return send(res, 200, dataBaseline.stats());
+    }
+
+    // v12.68.0 : ce que la baseline a appris (resume par cle, profil des 168 creneaux).
+    if (p === '/api/baseline/keys') {
+      const b = baselineByType(url.searchParams.get('type'));
+      return send(res, 200, { keys: b.keysSummary(100) });
+    }
+    if (p === '/api/baseline/profile') {
+      const b = baselineByType(url.searchParams.get('type'));
+      const key = String(url.searchParams.get('key') || '').slice(0, 253);
+      if (!key) return send(res, 400, { error: 'key required' });
+      return send(res, 200, b.profile(key));
     }
 
     // ── ModSecurity / WAF ────────────────────────────────────────────────────
@@ -882,6 +1011,15 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
 
+    if (p === '/api/baseline/data/exclude' && req.method === 'POST') {
+      const vhost = url.searchParams.get('vhost');
+      const hour  = url.searchParams.get('hour');
+      if (!vhost || !hour) return send(res, 400, { error: 'vhost and hour required' });
+      dataBaseline.exclude(vhost, hour);
+      store.setState('data_baseline', dataBaseline.toJSON());
+      return send(res, 200, { ok: true });
+    }
+
     return send(res, 404, { error: 'Not found' });
   } catch (e) {
     console.error(`[api] ${p}:`, e);
@@ -906,6 +1044,8 @@ server.listen(CONFIG.port, () => {
   console.log(`  Baseline  : ${b.learning ? `apprentissage ${b.daysElapsed}/${b.daysRequired} j` : 'active'}, ${b.coverage}% des creneaux`);
   const cb = countryBaseline.stats();
   console.log(`  Base.pays : ${cb.learning ? `apprentissage ${cb.daysElapsed}/${cb.daysRequired} j` : 'active'}, ${cb.coverage}% des creneaux`);
+  const db_ = dataBaseline.stats();
+  console.log(`  Base.data : ${db_.learning ? `apprentissage ${db_.daysElapsed}/${db_.daysRequired} j` : 'active'}, ${db_.coverage}% des creneaux`);
   console.log(`  WAF       : ${CONFIG.wafLogPattern} (${wafTailer.status().files} fichier(s))`);
   console.log(`  Blocklist : ${CONFIG.blocklistLogPattern} (${blocklistTailer.status().files} fichier(s))`);
 });

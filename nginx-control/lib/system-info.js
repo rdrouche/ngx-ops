@@ -180,6 +180,14 @@ const ENTRIES = [
   // ALERTING_ENABLE recalcule a chaque requete dans buildSystemInfo() (comme
   // les lignes *_MENU ci-dessus), avec le mode et la source (env/yaml/
   // defaut) reellement resolus par lib/feature-flags.js.
+  { key: 'INTEL_API_URL', category: 'Alertes', value: cfg.INTEL_API_URL, default: '', override: ENV_OR_YAML('INTEL_API_URL', 'intelligence.yml'),
+    description: "URL (https) de la plateforme centrale qui recoit les alertes de l analyse (NGX Ops Intelligence). Valeur par defaut injectee au build (ARG/ENV) ; `api_url` de config/intelligence.yml la surcharge. L envoi reste desactive tant que `enable: true` n est pas pose dans intelligence.yml." },
+  { key: 'INTEL_TOKEN', category: 'Alertes', sensitive: true, value: !!cfg.INTEL_TOKEN, default: false, override: ENV_OR_YAML('INTEL_TOKEN', 'intelligence.yml'),
+    description: "Jeton du mode « identified » de NGX Ops Intelligence (en-tete Authorization: Bearer). Priorite ENV > config/intelligence.yml (token). Inutile en mode anonymous." },
+  { key: 'WAF_DEFAULT_IMAGE', category: 'WAF', value: cfg.WAF_DEFAULT_IMAGE, default: 'ANALYZER_DEFAULT_IMAGE', override: ENV_OR_YAML('WAF_DEFAULT_IMAGE', 'waf.yml'),
+    description: "Image par defaut du conteneur du WAF emule (ngx-waf) quand config/waf.yml ne definit pas container_image. Absente : celle de l analyseur (ANALYZER_DEFAULT_IMAGE, meme image, 2e binaire). Injectee au build (ARG/ENV), surchargeable a l execution." },
+  { key: 'WAF_TOKEN', category: 'WAF', sensitive: true, value: !!cfg.WAF_TOKEN, default: false, override: ENV('WAF_TOKEN'),
+    description: "Secret partage avec le conteneur du WAF emule (en-tete X-WAF-Token), jamais envoye au navigateur. Absent : genere au premier demarrage et conserve dans config/.generated-secrets.json (comme SESSION_SECRET). Changer la valeur impose de recreer le conteneur (bouton Demarrer)." },
   { key: 'ALERTING_URL', category: 'Alertes', value: cfg.ALERTING_URL, default: '', override: ENV('ALERTING_URL'),
     description: "URL brute d un fichier Markdown de messages importants (voir features/alerting.js). Vide = aucune alerte possible, quel que soit ALERTING_ENABLE (voir Dockerfile pour l injecter au build)." },
   { key: 'ALERTING_ENABLE', category: 'Alertes', value: false, default: false, override: YAML('features.yml'),
@@ -194,6 +202,12 @@ const ENTRIES = [
     description: "Duree de conservation du journal d evenements (page Evenements)." },
   { key: 'MONITOR_RETENTION_DAYS', category: 'Rétention', value: cfg.MONITOR_RETENTION_DAYS, default: 30, override: ENV('MONITOR_RETENTION_DAYS'),
     description: "Duree de conservation de l historique du monitoring continu (checks + incidents clos — un incident encore ouvert n est jamais purge)." },
+  { key: 'DB_COMPACT_ON_START', category: 'Rétention', value: cfg.DB_COMPACT_ON_START, default: 'auto', override: ENV('DB_COMPACT_ON_START'),
+    description: "Compactage SQLite au demarrage (events.db, monitoring.db, notifications-center.db) : une purge libere des pages sans reduire le fichier. auto = VACUUM seulement si l espace recuperable depasse les seuils ci-dessous, always = toujours, off = jamais. Un entretien leger (checkpoint WAL + incremental_vacuum) tourne ensuite toutes les 6 h." },
+  { key: 'DB_COMPACT_MIN_FREE_MB', category: 'Rétention', value: cfg.DB_COMPACT_MIN_FREE_MB, default: 16, override: ENV('DB_COMPACT_MIN_FREE_MB'),
+    description: "Mode auto : espace libre minimal (Mo) dans une base SQLite pour declencher le compactage au demarrage." },
+  { key: 'DB_COMPACT_MIN_FREE_PCT', category: 'Rétention', value: cfg.DB_COMPACT_MIN_FREE_PCT, default: 20, override: ENV('DB_COMPACT_MIN_FREE_PCT'),
+    description: "Mode auto : part minimale (%) de pages libres dans la base pour declencher le compactage au demarrage (en plus du seuil en Mo)." },
   { key: 'NOTIF_CENTER_RETENTION_DAYS', category: 'Rétention', value: cfg.NOTIF_CENTER_RETENTION_DAYS, default: 90, override: ENV('NOTIF_CENTER_RETENTION_DAYS'),
     description: "Duree de conservation des notifications du centre de notification (cloche d en-tete), lues ou non." },
 
@@ -202,6 +216,43 @@ const ENTRIES = [
   { key: 'BRANDING_REPO', category: 'Branding', value: cfg.BRANDING.repo, default: '', override: ENV('BRANDING_REPO') },
   { key: 'BRANDING_DOC', category: 'Branding', value: cfg.BRANDING.doc, default: '', override: ENV('BRANDING_DOC'),
     description: "Lien \"Documentation\" affiche dans le pied de menu. Ces reglages de marque (voir aussi BRANDING_KOFI, BRANDING_*_LABEL) sont surcharges au moment du BUILD (docker-compose.yml, section `build.args`), pas seulement a l execution." },
+
+  { key: 'BRANDING_DOC_LABEL', category: 'Branding', value: cfg.BRANDING.docLabel, default: 'Documentation', override: ENV('BRANDING_DOC_LABEL'),
+    description: "Libelle du lien documentation (voir BRANDING_DOC)." },
+  { key: 'BRANDING_SITE_LABEL', category: 'Branding', value: cfg.BRANDING.siteLabel, default: '', override: ENV('BRANDING_SITE_LABEL'),
+    description: "Libelle du lien vers le site (voir BRANDING_SITE)." },
+  { key: 'BRANDING_REPO_LABEL', category: 'Branding', value: cfg.BRANDING.repoLabel, default: 'Source repository', override: ENV('BRANDING_REPO_LABEL'),
+    description: "Libelle du lien vers le depot (voir BRANDING_REPO)." },
+  { key: 'BRANDING_KOFI', category: 'Branding', value: cfg.BRANDING.kofi, default: '', override: ENV('BRANDING_KOFI'),
+    description: "Lien de soutien (Ko-fi) affiche dans le pied de menu. Vide = masque." },
+  { key: 'BRANDING_KOFI_LABEL', category: 'Branding', value: cfg.BRANDING.kofiLabel, default: 'Support on Ko-fi', override: ENV('BRANDING_KOFI_LABEL'),
+    description: "Libelle du lien de soutien (voir BRANDING_KOFI)." },
+  { key: 'BRANDING_HEADER_TEXT', category: 'Branding', value: cfg.BRANDING.headerText, default: '', override: ENV('BRANDING_HEADER_TEXT'),
+    description: "Texte affiche dans l en-tete de l interface. Vide = aucun." },
+
+  // ─── Challenge navigateur (v12.64.0) ────────────────────────────────────
+  { key: 'CHALLENGE_DEFAULT_IMAGE', category: 'Challenge', value: cfg.CHALLENGE_DEFAULT_IMAGE, default: 'forge.rdr-it.com/dockerfiles/nginx-challenge:latest', override: ENV('CHALLENGE_DEFAULT_IMAGE'),
+    description: "Image par defaut du conteneur de challenge navigateur (moteur builtin) quand config/challenge.yml ne definit pas container_image. Injectee au build (ARG/ENV), surchargeable a l execution." },
+  { key: 'AGENT_DEFAULT_IMAGE', category: 'Général', value: cfg.AGENT_DEFAULT_IMAGE, default: 'forge.rdr-it.com/dockerfiles/nginx-control-agent', override: ENV('AGENT_DEFAULT_IMAGE'),
+    description: "Image par defaut de l agent Go distant (nginx-agent) dans le kit de deploiement des agents (.env et compose.yml). Injectee au build (ARG/ENV), surchargeable a l execution ; modifiable par agent a la creation du kit." },
+  { key: 'INSTANCE_ID', category: 'Général', value: cfg.INSTANCE_ID, default: 'UUID genere au 1er demarrage', override: ENV('INSTANCE_ID'),
+    description: "Identifiant unique et persistant de cette installation (UUID). Genere une seule fois et conserve dans config/.generated-secrets.json ; ENV INSTANCE_ID (UUID valide) prioritaire. Identifie l instance pour la future remontee d alertes (NGX Ops Intelligence) — n est pas un secret." },
+  { key: 'HTTP_USER_AGENT', category: 'Général', value: cfg.HTTP_USER_AGENT, default: 'NGXOps', override: ENV('HTTP_USER_AGENT'),
+    description: "User-Agent envoye par toutes les requetes HTTP sortantes de NGX Ops (listes de blocage, depots, webhooks, CrowdSec, hotes distants, git). Sans version, pour pouvoir le filtrer ou l exempter cote nginx (ex. challenge_exempt_ua_regex: '^NGXOps$')." },
+  { key: 'NC_SECRET', category: 'Challenge', sensitive: true, value: !!cfg.NC_SECRET, default: false, override: ENV('NC_SECRET'),
+    description: "Secret de signature du conteneur de challenge. Absent : genere au premier demarrage et conserve (comme SESSION_SECRET). Priorite ENV > config/challenge.yml (secret) > genere." },
+  { key: 'NC_DIFFICULTY_BITS', category: 'Challenge', value: cfg.NC_DIFFICULTY_BITS || 16, default: 16, override: ENV_OR_YAML('NC_DIFFICULTY_BITS', 'challenge.yml'),
+    description: "Difficulte de la preuve de travail (8-64 ; au-dela de ~30 un navigateur n aboutit plus). Priorite ENV > config/challenge.yml (difficulty_bits) > defaut." },
+  { key: 'NC_COOKIE_HOURS', category: 'Challenge', value: cfg.NC_COOKIE_HOURS || 24, default: 24, override: ENV_OR_YAML('NC_COOKIE_HOURS', 'challenge.yml'),
+    description: "Duree de validite du cookie \"navigateur verifie\" en heures (1-720). Priorite ENV > config/challenge.yml (cookie_hours) > defaut." },
+  { key: 'NC_GOODBOTS', category: 'Challenge', value: cfg.NC_GOODBOTS || 'true', default: 'true', override: ENV_OR_YAML('NC_GOODBOTS', 'challenge.yml'),
+    description: "Laisse passer les bons robots d indexation (DNS inverse confirmee) avec challenge-all-allowbots.conf. Priorite ENV > config/challenge.yml (goodbots) > defaut." },
+  { key: 'NC_GOODBOTS_EXTRA', category: 'Challenge', value: cfg.NC_GOODBOTS_EXTRA, default: '', override: ENV_OR_YAML('NC_GOODBOTS_EXTRA', 'challenge.yml'),
+    description: "Robots supplementaires nom|regex-UA|.suffixe[,.suffixe][;nom2|...]. Priorite ENV > config/challenge.yml (goodbots_extra) > vide." },
+  { key: 'NC_LANG', category: 'Challenge', value: cfg.NC_LANG || 'auto', default: 'auto', override: ENV_OR_YAML('NC_LANG', 'challenge.yml'),
+    description: "Langue de la page de verification du challenge : auto (langue du navigateur, anglais par defaut), fr ou en. Priorite ENV > config/challenge.yml (language) > auto." },
+  { key: 'ANUBIS_DEFAULT_IMAGE', category: 'Challenge', value: cfg.ANUBIS_DEFAULT_IMAGE, default: 'ghcr.io/techarohq/anubis:latest', override: ENV('ANUBIS_DEFAULT_IMAGE'),
+    description: "Image par defaut du conteneur Anubis (moteur anubis) quand config/challenge.yml ne definit pas container_image. Injectee au build (ARG/ENV), surchargeable a l execution." },
 
   // ─── Menu (v12.39.0, retour utilisateur) ───────────────────────────────
   // Valeurs par defaut ici ('auto'/'show') ; buildSystemInfo() les recalcule
@@ -221,6 +272,16 @@ const ENTRIES = [
     description: "Visibilite du menu Auto-config Docker. `auto` (defaut) reflete `enable:` dans docker-autoconfig.yml (la fonctionnalite tourne deja en arriere-plan quel que soit ce reglage d affichage — desactiver la fonctionnalite se fait dans ce fichier, pas ici) ; `show`/`hide` forcent l affichage independamment." },
   { key: 'AGENTS_MENU', category: 'Menu', value: 'auto', default: 'auto', override: ENV_OR_YAML('MENU_AGENTS', 'menu.yml'),
     description: "Visibilite du menu Hotes distants. `auto` (defaut) reflete `enable:` dans agents.yml ; `show`/`hide` forcent l affichage independamment." },
+  // v12.72.0 : entrees de menu masquables via le formulaire "Menu" (Systeme) ou menu.yml.
+  ...[
+    ['SYNC', 'Sync ref files'], ['VHOSTGEN', 'Generateur VHost'], ['GRAPH', 'Schema'], ['DEPLOY', 'Deploiement Git'],
+    ['BLOCKLISTS', 'Blocklist IP'], ['WAFEMU', 'WAF Emule'], ['GEOMAP', 'Carte'], ['DIGEST', 'Resume'], ['CACHE', 'Nginx Cache'], ['NOTIFICATIONS', 'Notifications'],
+  ].map(([k, label]) => ({
+    key: `${k}_MENU`, category: 'Menu', value: 'show', default: 'show', override: ENV_OR_YAML(`MENU_${k}`, 'menu.yml'),
+    description: `Visibilite du menu ${label}. Valeurs acceptees : show (defaut), hide. Reglable aussi depuis le bouton Menu de cette page.`,
+  })),
+  { key: 'GOACCESS_MENU', category: 'Menu', value: 'auto', default: 'auto', override: ENV_OR_YAML('MENU_GOACCESS', 'menu.yml'),
+    description: "Visibilite du menu GoAccess. `auto` (defaut) l affiche seulement si des sources GoAccess sont configurees ; `hide` le masque dans tous les cas." },
 
   // ─── GoDNS (v12.39.0, retour utilisateur) ──────────────────────────────
   // SECURITE : verification multi-source de l IP publique — voir
@@ -246,6 +307,9 @@ const YAML_BACKED_SETTINGS = [
   { file: 'certbot-dns.yml', purpose: "Defi DNS-01 (fournisseur, identifiants) — page SSL/Certbot" },
   { file: 'godns.yml', purpose: 'DNS dynamique — page GoDNS' },
   { file: 'geoipupdate.yml', purpose: 'Conteneur geoipupdate gere par le dashboard — page GeoIP' },
+  { file: 'challenge.yml', purpose: "Conteneur de challenge navigateur géré par le dashboard — page Blocklists" },
+  { file: 'intelligence.yml', purpose: "Envoi des alertes d'analyse vers la plateforme centrale (NGX Ops Intelligence) — page Analyse" },
+  { file: 'waf.yml', purpose: "WAF émulé (analyse a posteriori des journaux, Coraza + OWASP CRS) : conteneur géré par le dashboard — page WAF émulé" },
   { file: 'error-pages.yml', purpose: "Conteneur de pages d'erreur gere par le dashboard — page Pages d'erreur" },
   { file: 'crowdsec.yml', purpose: 'Reglages complementaires CrowdSec' },
   { file: 'git.yml', purpose: 'Configuration Git alternative geree depuis le dashboard' },
@@ -253,7 +317,7 @@ const YAML_BACKED_SETTINGS = [
   { file: 'blocklists.yml', purpose: 'Sources de blocklists IP externes (URL, cron, action) — page Blocklists IP' },
   { file: 'deploy-tokens.yml', purpose: 'Jetons scopes pour declencher un deploiement Git depuis un pipeline CI/CD (Forgejo/GitHub/GitLab)' },
   { file: 'docker-autoconfig.yml', purpose: 'Auto-config Docker par labels (approbation, motifs autorises, intervalle de sondage) — page Auto-config Docker' },
-  { file: 'menu.yml', purpose: 'Visibilite des elements de menu optionnels (WAF, GoDNS, REST API, Webhooks, Auto-config Docker, Hotes distants) — voir aussi MENU_WAF/MENU_GODNS/MENU_API/MENU_WEBHOOKS/MENU_DOCKER_AUTOCONFIG/MENU_AGENTS' },
+  { file: 'menu.yml', purpose: 'Visibilite des elements de menu optionnels (WAF, GoDNS, REST API, Webhooks, Auto-config Docker, Hotes distants, Sync, VHost Generator, Schema, Deploiement Git, Blocklists, WAF emule, Carte, Resume, GoAccess ; editable via le bouton Menu de Systeme) — voir aussi MENU_WAF/MENU_GODNS/MENU_API/MENU_WEBHOOKS/MENU_DOCKER_AUTOCONFIG/MENU_AGENTS' },
   { file: 'features.yml', purpose: 'Interrupteurs marche/arret transversaux (alerting_enable pour le moment) — voir aussi ALERTING_ENABLE' },
 ];
 
@@ -277,7 +341,7 @@ const INTENTIONALLY_OMITTED = new Set([
   'readGeneratedSecrets', 'persistGeneratedSecret', 'clearGeneratedSecret',
   'apiTokenActive', 'verifyApiToken', 'getWebhookSecret', 'isWebhookSecretConfigured',
   'SMTP_CONFIG_FILE', 'NOTIF_CONFIG_FILE', 'SCHED_CONFIG_FILE', 'CERTBOT_CONFIG_FILE',
-  'CERTBOT_DNS_CONFIG_FILE', 'GODNS_CONFIG_FILE', 'GEOIPUPDATE_CONFIG_FILE', 'ERROR_PAGES_CONFIG_FILE',
+  'CERTBOT_DNS_CONFIG_FILE', 'GODNS_CONFIG_FILE', 'GEOIPUPDATE_CONFIG_FILE', 'ERROR_PAGES_CONFIG_FILE', 'CHALLENGE_CONFIG_FILE', 'INTELLIGENCE_CONFIG_FILE', 'INTELLIGENCE_STATE_FILE', 'WAF_CONFIG_FILE',
   // MENU_CONFIG_FILE (v12.39.0) : chemin derive de CONFIG_DIR, comme les
   // autres *_CONFIG_FILE ci-dessus. Les reglages qu il contient (visibilite
   // WAF/GoDNS) sont documentes juste en dessous, comme des entrees a part
@@ -367,6 +431,10 @@ async function buildSystemInfo() {
     }
     if (row.key === 'AGENTS_MENU') {
       row.value = `${menuVisibility.agents.mode} (${menuVisibility.agents.source}) -> ${menuVisibility.agents.visible ? 'affiche' : 'masque'}`;
+    }
+    if (/^(SYNC|VHOSTGEN|GRAPH|DEPLOY|BLOCKLISTS|WAFEMU|GEOMAP|DIGEST|CACHE|NOTIFICATIONS|GOACCESS)_MENU$/.test(row.key)) {
+      const mv = menuVisibility[row.key.replace(/_MENU$/, '').toLowerCase()];
+      if (mv) row.value = `${mv.mode} (${mv.source}) -> ${mv.visible ? 'affiche' : 'masque'}`;
     }
     if (row.key === 'ALERTING_ENABLE') {
       const flag = resolveFlag('alerting');

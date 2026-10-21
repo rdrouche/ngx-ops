@@ -40,7 +40,7 @@ const int = (name, fallback) => {
 // ne sert qu en dehors d un conteneur construit par ce Dockerfile (tests
 // locaux, `node server.js` execute directement) — l ARG du Dockerfile a lui
 // meme deja son propre defaut ("dev") pour un build sans --build-arg.
-const VERSION = str('APP_VERSION', '12.49.3');
+const VERSION = str('APP_VERSION', '12.74.0');
 
 // ─── Core ────────────────────────────────────────────────────────────────────
 const PORT            = int('PORT', 3000);
@@ -142,6 +142,28 @@ const SESSION_SECRET = sessionSecretResolved.value;
 if (sessionSecretResolved.isNew) {
   console.log(`[config] SESSION_SECRET n'est pas definie : une valeur aleatoire a ete generee et enregistree dans ${GENERATED_SECRETS_FILE} — les sessions resteront valides d'un redemarrage a l'autre. Pour la choisir vous-meme, definissez SESSION_SECRET dans .env (ex. \`openssl rand -hex 32\`) : elle sera alors toujours prioritaire sur la valeur generee.`);
 }
+// v12.67.1 : identifiant unique et PERSISTANT de cette installation (UUID v4),
+// prerequis de la future remontee d alertes vers « NGX Ops Intelligence »
+// (mode anonyme ou authentifie). Priorite ENV INSTANCE_ID (UUID valide) > valeur
+// persistee dans config/.generated-secrets.json > generee au premier demarrage.
+// Ce n est PAS un secret (il identifie l instance) : ne jamais l utiliser comme preuve d identite.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INSTANCE_ID = (() => {
+  const env = str('INSTANCE_ID');
+  if (env) {
+    if (UUID_RE.test(env)) return env.toLowerCase();
+    console.warn('[config] INSTANCE_ID ignoree : un UUID est attendu (ex. 3f2b8c1e-9d4a-4e6b-8a57-1c2d3e4f5a6b).');
+  }
+  const stored = readGeneratedSecrets().instanceId;
+  if (typeof stored === 'string' && UUID_RE.test(stored)) return stored.toLowerCase();
+  const id = crypto.randomUUID();
+  // Repertoire de config absent : on ne le cree PAS ici (le diagnostic de demarrage doit
+  // pouvoir le signaler) — l ID reste alors ephemere jusqu a ce que le repertoire existe.
+  if (!require('fs').existsSync(CONFIG_DIR)) return id;
+  persistGeneratedSecret('instanceId', id);
+  console.log(`[config] Identifiant d'instance genere et enregistre dans ${GENERATED_SECRETS_FILE} : ${id}`);
+  return id;
+})();
 const SESSION_TTL_MS = int('SESSION_TTL_HOURS', 8) * 3600_000;
 // Sliding TTL keeps active users signed in; the absolute cap bounds how long a
 // stolen cookie stays useful.
@@ -319,6 +341,15 @@ const GODNS_IP_CHECK_URLS = str('GODNS_IP_CHECK_URLS',
 // Dockerfile pour etre configurable au moment du build (--build-arg), tout en
 // restant surchargeable a l execution comme n importe quelle autre variable.
 const ANALYZER_DEFAULT_IMAGE = str('ANALYZER_DEFAULT_IMAGE', 'forge.rdr-it.com/dockerfiles/nginx-analyzer:latest');
+// Image de l'agent Go distant (nginx-agent : autorisation Docker / reverse proxy distant), utilisee par
+// le kit de deploiement (.env + compose.yml) des agents. Meme mecanisme que les images ci-dessus : fixee
+// au build (ARG/ENV du Dockerfile), surchargeable a l'execution. Nom sans tag ; un nom invalide retombe
+// sur le defaut. `||` : une variable vide (compose `${AGENT_DEFAULT_IMAGE:-}`) retombe aussi sur le defaut.
+const AGENT_IMAGE_FALLBACK = 'forge.rdr-it.com/dockerfiles/nginx-control-agent';
+const AGENT_DEFAULT_IMAGE = (() => {
+  const v = str('AGENT_DEFAULT_IMAGE');
+  return v && /^[a-z0-9][a-z0-9._\/-]{0,200}$/i.test(v) ? v : AGENT_IMAGE_FALLBACK;
+})();
 const EVENTS_DB_PATH    = path.join(CONFIG_DIR, 'events.db');
 const EVENTS_RETENTION_DAYS = int('EVENTS_RETENTION_DAYS', 30);
 
@@ -329,6 +360,13 @@ const EVENTS_RETENTION_DAYS = int('EVENTS_RETENTION_DAYS', 30);
 // else in CONFIG_DIR, so no new volume is needed in docker-compose.yml.
 const MONITOR_DB_PATH = path.join(CONFIG_DIR, 'monitoring.db');
 const MONITOR_RETENTION_DAYS = int('MONITOR_RETENTION_DAYS', 30);
+
+// v12.74.0 — SQLite maintenance (events.db, monitoring.db, notifications-center.db):
+// a purge frees pages but never shrinks the file. At start-up a VACUUM runs when the
+// reclaimable share is high enough (auto = thresholds, always, off).
+const DB_COMPACT_ON_START = (() => { const v = str('DB_COMPACT_ON_START', 'auto').toLowerCase(); return ['auto', 'always', 'off'].includes(v) ? v : 'auto'; })();
+const DB_COMPACT_MIN_FREE_MB = int('DB_COMPACT_MIN_FREE_MB', 16);
+const DB_COMPACT_MIN_FREE_PCT = int('DB_COMPACT_MIN_FREE_PCT', 20);
 
 // In-app notification center (lib/notifications.js) — the bell/dropdown in
 // the header. Its own database file, same reasoning as MONITOR_DB_PATH
@@ -402,6 +440,45 @@ const GEOIP_ASN_DB     = str('GEOIP_ASN_DB',     '/geoip/GeoLite2-ASN.mmdb');
 const DIR_GEOIP = str('DIR_GEOIP', '/geoip');
 const GEOIPUPDATE_CONFIG_FILE = path.join(CONFIG_DIR, 'geoipupdate.yml');
 const ERROR_PAGES_CONFIG_FILE = path.join(CONFIG_DIR, 'error-pages.yml');
+
+// Conteneur du challenge navigateur (v12.63.0, features/challenge-container.js).
+// Images par defaut injectees via ARG/ENV du Dockerfile (--build-arg) et
+// surchargeables a l execution, comme ANALYZER_DEFAULT_IMAGE ci-dessus ; une
+// image fixee dans config/challenge.yml (container_image) reste prioritaire.
+const CHALLENGE_CONFIG_FILE = path.join(CONFIG_DIR, 'challenge.yml');
+// NGX Ops Intelligence (v12.69.0) : envoi des alertes de l'analyse vers la plateforme centrale.
+// INTEL_API_URL : valeur par defaut de l'image (ARG/ENV du Dockerfile), surchargee par `api_url` de
+// config/intelligence.yml. INTEL_TOKEN : jeton du mode « identifie » (prioritaire sur le yml).
+const INTELLIGENCE_CONFIG_FILE = path.join(CONFIG_DIR, 'intelligence.yml');
+const INTELLIGENCE_STATE_FILE  = path.join(CONFIG_DIR, 'intelligence-state.json');
+const INTEL_API_URL = str('INTEL_API_URL');
+const INTEL_TOKEN   = str('INTEL_TOKEN');
+// WAF emule (conteneur ngx-waf, features/waf.js) : config/waf.yml. Image par defaut = celle de
+// l analyseur (meme image, 2e binaire /usr/local/bin/waf), surchargee par `container_image` du yml.
+// WAF_TOKEN (optionnel) : secret partage avec le conteneur ; absent -> genere une fois et conserve
+// dans .generated-secrets.json (lib/waf-token.js), jamais expose au navigateur.
+const WAF_CONFIG_FILE = path.join(CONFIG_DIR, 'waf.yml');
+// `||` et non un repli de str() : une variable vide (compose `${WAF_DEFAULT_IMAGE:-}`) doit retomber sur l'analyseur.
+const WAF_DEFAULT_IMAGE = str('WAF_DEFAULT_IMAGE') || ANALYZER_DEFAULT_IMAGE;
+const WAF_TOKEN = str('WAF_TOKEN');
+const CHALLENGE_DEFAULT_IMAGE = str('CHALLENGE_DEFAULT_IMAGE', 'forge.rdr-it.com/dockerfiles/nginx-challenge:latest');
+// User-Agent de TOUTES les requetes HTTP sortantes de NGX Ops (listes, depots,
+// webhooks, LAPI, hotes distants, git...) : un seul nom, sans version, pour pouvoir
+// le filtrer ou l exempter cote nginx (ex. challenge_exempt_ua_regex: '^NGXOps$').
+const HTTP_USER_AGENT = (() => {
+  const v = str('HTTP_USER_AGENT', 'NGXOps');
+  return /^[A-Za-z0-9._\/-]{1,60}$/.test(v) ? v : 'NGXOps';
+})();
+const ANUBIS_DEFAULT_IMAGE = str('ANUBIS_DEFAULT_IMAGE', 'ghcr.io/techarohq/anubis:latest');
+// Reglages du conteneur de challenge (v12.64.0). Priorite : ENV > config/challenge.yml > defaut.
+// Chaines brutes, validees par lib/challenge-container.js#applyEnv. NC_SECRET absent :
+// genere et conserve dans .generated-secrets.json (comme SESSION_SECRET), cf. features/challenge-container.js.
+const NC_SECRET = str('NC_SECRET');
+const NC_DIFFICULTY_BITS = str('NC_DIFFICULTY_BITS');
+const NC_COOKIE_HOURS = str('NC_COOKIE_HOURS');
+const NC_GOODBOTS = str('NC_GOODBOTS');
+const NC_GOODBOTS_EXTRA = str('NC_GOODBOTS_EXTRA');
+const NC_LANG = str('NC_LANG');
 
 // ─── CrowdSec ────────────────────────────────────────────────────────────────
 const CROWDSEC_URL        = str('CROWDSEC_URL');
@@ -495,7 +572,7 @@ const BRANDING = {
   repoLabel: str('BRANDING_REPO_LABEL', 'Source repository'),
   doc:       str('BRANDING_DOC'),
   docLabel:  str('BRANDING_DOC_LABEL', 'Documentation'),
-  // Texte libre affiche dans l en-tete, entre le nom "Nginx Control" et les
+  // Texte libre affiche dans l en-tete, entre le nom "NGX Ops" et les
   // badges de version — pour distinguer un environnement (nom de client,
   // "STAGING", etc.) directement dans l en-tete sans toucher au code.
   headerText: str('BRANDING_HEADER_TEXT'),
@@ -509,7 +586,7 @@ module.exports = Object.freeze({
   VERSION,
   PORT, NGINX_VTS_URL, NGINX_CONTAINER, NGINX_IMAGE, NGINX_CONF_FILE, NGINX_NETWORK,
   TRUSTED_PROXIES, NOTIF_POLL_INTERVAL_SEC,
-  SESSION_SECRET, SESSION_TTL_MS, SESSION_ABSOLUTE_MAX_MS, GENERATED_SECRETS_FILE,
+  INSTANCE_ID, SESSION_SECRET, SESSION_TTL_MS, SESSION_ABSOLUTE_MAX_MS, GENERATED_SECRETS_FILE,
   API_TOKEN, API_TOKEN_ENABLED, WEBHOOK_SECRET, WEBHOOK_SECRET_SET,
   readGeneratedSecrets, persistGeneratedSecret, clearGeneratedSecret,
   apiTokenActive, verifyApiToken, getWebhookSecret, isWebhookSecretConfigured,
@@ -520,11 +597,13 @@ module.exports = Object.freeze({
   ANALYZER_DEFAULT_IMAGE,
   EVENTS_DB_PATH, EVENTS_RETENTION_DAYS,
   MONITOR_DB_PATH, MONITOR_RETENTION_DAYS,
+  DB_COMPACT_ON_START, DB_COMPACT_MIN_FREE_MB, DB_COMPACT_MIN_FREE_PCT,
   NOTIF_CENTER_DB_PATH, NOTIF_CENTER_RETENTION_DAYS,
   DIR_SITES, DIR_CONF, DIR_SNIPPETS, DIR_STREAMS, DIR_SSL, DIR_CERTS, DIR_LOGS,
   DIR_CACHE, DIR_BACKUPS, DIR_GIT_WORK, HOST_LOGS, HOST_GOACCESS,
   GIT_REPO_URL, GIT_BRANCH, GIT_BACKUP_BRANCH, GIT_SSH_KEY, GIT_TOKEN,
-  GIT_USER_NAME, GIT_USER_EMAIL, GIT_CONFIG_FILE, BLOCKLIST_CONFIG_FILE, DEPLOY_TOKENS_FILE,
+  GIT_USER_NAME, GIT_USER_EMAIL, GIT_CONFIG_FILE, BLOCKLIST_CONFIG_FILE, DEPLOY_TOKENS_FILE, CHALLENGE_CONFIG_FILE, INTELLIGENCE_CONFIG_FILE, INTELLIGENCE_STATE_FILE, INTEL_API_URL, INTEL_TOKEN, WAF_CONFIG_FILE, WAF_DEFAULT_IMAGE, AGENT_DEFAULT_IMAGE, WAF_TOKEN, CHALLENGE_DEFAULT_IMAGE, ANUBIS_DEFAULT_IMAGE, HTTP_USER_AGENT,
+  NC_SECRET, NC_DIFFICULTY_BITS, NC_COOKIE_HOURS, NC_GOODBOTS, NC_GOODBOTS_EXTRA, NC_LANG,
   DOCKER_AUTOCONFIG_CONFIG_FILE, AGENTS_CONFIG_FILE, BACKUP_KEEP,
   ALLOW_EDIT, ALLOW_CREATE, DEPLOY_SYNC_SSL,
   DOCKER_SOCKET, GEOIP_CITY_DB, GEOIP_COUNTRY_DB, GEOIP_ASN_DB, DIR_GEOIP,

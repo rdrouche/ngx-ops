@@ -1,0 +1,35 @@
+# WAF émulé — analyse a posteriori des journaux d'accès (Coraza v3 en DetectionOnly + OWASP CRS).
+# Désactivé par défaut. Éditable dans « Éditeur de configuration ». Page : « WAF émulé ».
+#
+# LIMITES (à lire avant d'activer) : ce n'est PAS un WAF en ligne. Il relit les journaux nginx après
+# coup et reconstruit une requête synthétique par ligne : il ne bloque jamais lui-même, ne voit pas
+# les corps de requête (POST) et, avec le format combined, pas les en-têtes absents du journal.
+# La « remédiation » alimente des listes (waf-block / waf-challenge) appliquées par la fonctionnalité
+# Blocklists (sources `type: waf` de config/blocklists.yml) : elle protège les requêtes SUIVANTES.
+# Les réglages (modes, règles, exceptions, vhosts) se font dans la page WAF émulé, pas ici.
+#
+# enable: false
+#
+# Obligatoire pour démarrer le conteneur : reconnaître les limites ci-dessus.
+# accept_limits: false
+#
+# Conteneur
+# container_name: ngx-waf
+# Image par défaut : WAF_DEFAULT_IMAGE (ARG/ENV de l'image), sinon ANALYZER_DEFAULT_IMAGE (même image,
+# 2e binaire /usr/local/bin/waf). Cette clé la surcharge.
+# container_image: forge.rdr-it.com/dockerfiles/nginx-analyzer:latest
+# port: 9101                  # interne au réseau Docker, jamais publié
+#
+# Chemins HOTE (indispensables) — Docker résout les montages sur l'hôte, un chemin interne au
+# dashboard ferait monter un dossier vide.
+# host_data_path: /containers/nginx-rproxy/waf          # état : réglages (settings.json), base des hits
+# host_rules_path: /containers/nginx-rproxy/waf-rules   # OWASP CRS téléchargé + règles personnalisées
+# host_logs_path: /containers/nginx-rproxy/logs         # défaut : HOST_LOGS (monté en lecture seule)
+#
+# Fichiers de journaux lus (expressions régulières lues telles quelles, guillemets facultatifs)
+# log_pattern: (^|[._])access\.log$        # formats combined / combined_vhost
+# waf_log_pattern: (^|[._-])wafemu\.log$   # format JSON enrichi waf_json (fichier SÉPARÉ, voir « Conseils »)
+#
+# Jeu de règles OWASP CRS téléchargé au premier démarrage (github.com uniquement) et rétention des hits
+# crs_version: v4.8.0
+# hit_retention_days: 30

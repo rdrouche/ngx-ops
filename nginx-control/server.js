@@ -60,7 +60,7 @@ const { PERMS, ROLE_PERMS, roleHasPerm, hasPerm, hashPassword, verifyPassword,
         validateSession, destroySession, sessions, checkLoginRate,
         recordLoginFailure, clearLoginFailures, parseCookies, setCookieHeader,
         clearCookieHeader, getTokenFromReq, getSessionFromReq, requireSession,
-        requireApiAuth, authenticateQueryToken, authenticateDeployToken, authenticateAgentToken,
+        requireApiAuth, authenticateQueryToken, authenticateDeployToken, authenticateAgentToken, authenticateCertsyncToken,
         loginOriginAllowed } = auth;
 
 const { send, parseBody, readRawBody, clientIp, Router } = httpLib;
@@ -89,6 +89,7 @@ const { ensureContainerAtBoot: ensureCertbotDnsContainerAtBoot, getCertbotDnsCfg
 const { getGoDNSCfg, getGoDNSConfigFilePath } = require('./features/godns');
 const { ensureContainerAtBoot: ensureGeoipupdateContainerAtBoot } = require('./features/geoipupdate');
 const { ensureContainerAtBoot: ensureErrorPagesContainerAtBoot } = require('./features/error-pages');
+const { ensureContainerAtBoot: ensureChallengeContainerAtBoot } = require('./features/challenge-container');
 const goaccessFeature   = require('./features/goaccess');
 const deployFeature     = require('./features/deploy');
 const { deployFromGit, deployFromGitWork, cleanLegacyTestDirs } = deployFeature;
@@ -118,7 +119,7 @@ const STATIC_ASSETS_DIR = path.join(__dirname, 'public', 'assets');
 // CHANGELOG for why: those hosts were never in the CSP's script-src/font-src
 // to begin with, silently breaking the chart and the chosen typography for
 // any operator without unrestricted outbound access from the browser).
-const STATIC_ASSET_TYPES = { '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.woff2': 'font/woff2' };
+const STATIC_ASSET_TYPES = { '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
 
 // ─── Deep-linking (v12.31.0) ───────────────────────────────────────────────
 // Une URL directe par page ("/map", "/live-logs", ...) est une SPA route :
@@ -199,17 +200,17 @@ function loginPage(error = '', lang = 'en') {
   const SANS_STACK = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
   const MONO_STACK  = "ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace";
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nginx Control — Connexion</title>
+<title>NGX Ops — Connexion</title>
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{min-height:100vh;background:#0a0b0d;display:flex;align-items:center;justify-content:center;font-family:${SANS_STACK}}
 .wrap{width:100%;max-width:380px;padding:20px}
 .card{background:#14171d;border:1px solid #ffffff0f;border-radius:14px;padding:40px 36px}
 .logo{display:flex;align-items:center;gap:12px;margin-bottom:32px;justify-content:center}
-.logo-icon{width:36px;height:36px;background:#00e87a;border-radius:8px;display:flex;align-items:center;justify-content:center}
-.logo-icon svg{width:20px;height:20px;fill:none;stroke:#000;stroke-width:2.5;stroke-linecap:round}
+.logo-img{width:40px;height:40px;display:block}
 .logo-text{font-size:20px;font-weight:800;color:#e8eaf0;letter-spacing:-.5px}
-h1{font-size:15px;font-weight:700;color:#e8eaf0;margin-bottom:6px;text-align:center}
+h1{font-size:15px;font-weight:700;color:#e8eaf0;margin-bottom:24px;text-align:center}
 .sub{font-size:12px;color:#5a6278;text-align:center;margin-bottom:28px;font-family:${MONO_STACK}}
 label{display:block;font-family:${MONO_STACK};font-size:11px;color:#5a6278;letter-spacing:.3px;margin-bottom:5px}
 input{width:100%;background:#1c202a;border:1px solid #ffffff18;border-radius:6px;color:#e8eaf0;font-family:${MONO_STACK};font-size:13px;padding:10px 14px;outline:none;transition:.15s;margin-bottom:16px}
@@ -220,11 +221,10 @@ button:hover{background:#00ff85}
 </style></head><body>
 <div class="wrap"><div class="card">
   <div class="logo">
-    <div class="logo-icon"><svg viewBox="0 0 16 16"><polyline points="2,12 5,7 8,9 11,4 14,6"/></svg></div>
-    <div class="logo-text">Nginx Control</div>
+    <img class="logo-img" src="/assets/logo.svg" alt="" width="40" height="40">
+    <div class="logo-text">NGX Ops</div>
   </div>
-  <h1>Connexion</h1>
-  <div class="sub">Authentification requise</div>
+  <h1>${L.title}</h1>
   <div class="error">${error}</div>
   <form method="POST" action="/auth/login">
     <label>${L.user}</label>
@@ -263,6 +263,16 @@ const AGENT_TOKEN_ROUTES = new Set([
   'POST /api/agent/manifest',
 ]);
 
+// Les trois routes qu'un jeton de synchronisation de certificats
+// (lib/certsync-store.js, v12.59.0) peut atteindre — liste fixe, même
+// confinement que ci-dessus : la portée (pull/push) et les noms autorisés sont
+// ensuite contrôlés par features/certsync.js.
+const CERTSYNC_TOKEN_ROUTES = new Set([
+  'GET /api/certsync/list',
+  'GET /api/certsync/pull',
+  'POST /api/certsync/push',
+]);
+
 // ─── Route registry ──────────────────────────────────────────────────────────
 // Features register their own routes here. Anything not matched falls through
 // to the legacy if-chain below, which shrinks with each extracted feature.
@@ -272,6 +282,7 @@ const FEATURES = [
   require('./features/users'),
   require('./features/geoip'),
   require('./features/ssl'),
+  require('./features/certsync'),
   require('./features/crowdsec'),
   require('./features/metrics'),
   require('./features/logs'),
@@ -283,12 +294,15 @@ const FEATURES = [
   require('./features/godns'),
   require('./features/geoipupdate'),
   require('./features/error-pages'),
+  require('./features/challenge-container'),
   require('./features/goaccess'),
   require('./features/sync-ref'),
   require('./features/deploy'),
   require('./features/nginx-control'),
   require('./features/analyzer'),
+  require('./features/analyzer-rules'),
   require('./features/digest'),
+  require('./features/scheduler'),
   require('./features/config-editor'),
   require('./features/backends'),
   require('./features/audit'),
@@ -301,6 +315,9 @@ const FEATURES = [
   require('./features/menu-config'),
   require('./features/changelog'),
   require('./features/alerting'),
+  require('./features/containers'),
+  require('./features/intelligence'),
+  require('./features/waf'),
 ];
 for (const f of FEATURES) f.register(router);
 
@@ -327,6 +344,7 @@ dockerAutoconfigFeature.startEventsWatcher();
 // own enable flag (lib/feature-flags.js) on every tick, so toggling
 // ALERTING_ENABLE/config/features.yml takes effect without a restart.
 require('./features/alerting').startScheduler();
+require('./features/intelligence').startScheduler();
 
 // Hôtes Docker distants (agents, Partie 2 "fondations") — no boot-time
 // scheduler of its own: unlike Partie 1's poll loop, this feature is purely
@@ -357,12 +375,16 @@ agentsFeature.setDeps({
 // L analyseur tourne dans son propre conteneur ; le dashboard remonte ses
 // alertes dans le journal d evenements et par courriel.
 const analyzerFeature = require('./features/analyzer');
+const wafFeature = require('./features/waf');
 setTimeout(() => analyzerFeature.startAlertPolling(), 5000);
 
 const scheduler = require('./lib/scheduler');
 scheduler.setTasks({
   createBackupZip:            require('./lib/backup').createBackupZip,
   gitBackupPush:              require('./lib/git').gitBackupPush,
+  restartAnalyzer:            analyzerFeature.restartAnalyzer,
+  runCertsync:                require('./features/certsync').runSync,
+  listCertsyncRemotes:        require('./features/certsync').listRemotesForScheduler,
   listGoAccessSources:        goaccessFeature.listGoAccessSources,
   getGoAccessContainerStatus: goaccessFeature.getGoAccessContainerStatus,
   restartGoAccessContainer:   goaccessFeature.restartGoAccessContainer,
@@ -393,6 +415,19 @@ require('./lib/digest').configure({
 blocklistsFeature.setDeps({
   analyzerApi: analyzerFeature.analyzerApi,
   analyzerApiJson: analyzerFeature.analyzerApiJson,
+  // v12.50.0 : meme source de verite que pushVhostRules() pour savoir quels
+  // vhosts ont opte pour "# nginx-control-analyze-no-remediation: on" — voir
+  // computeAnalyzerBlocklist() dans features/blocklists.js.
+  buildVhostRulesMap: analyzerFeature.buildVhostRulesMap,
+  // Sources `type: waf` : IP des listes du WAF emule (conteneur ngx-waf).
+  wafListIps: wafFeature.wafListIps,
+  // Sources `type: challenge` : IP bloquees automatiquement par le challenge integre.
+  challengeListIps: require('./features/challenge-container').challengeListIps,
+});
+// Apres un deslistage depuis la page WAF, la blocklist se rafraichit sans attendre le cycle.
+wafFeature.setDeps({
+  refreshBlocklists: (opts) => blocklistsFeature.refreshBlocklists(opts),
+  explainWafIps: (ips, list) => blocklistsFeature.explainWafIps(ips, list),
 });
 
 require('./features/sync-ref').setDeployHandlers({
@@ -407,6 +442,12 @@ require('./features/sync-ref').setDeployHandlers({
 require('./features/configs').setDeps({
   testConfigEphemeral: deployFeature.testConfigEphemeral,
   fetchRefFileList:    require('./features/sync-ref').fetchRefFileList,
+});
+
+// nginx-control.js: the "test in an ephemeral container" action runs the same
+// sandbox as the Git test and the config editor (features/deploy.js).
+require('./features/nginx-control').setDeps({
+  testConfigEphemeral: deployFeature.testConfigEphemeral,
 });
 
 // monitor.js reuses the exact same probe as the on-demand backend check
@@ -469,7 +510,7 @@ agentsFeature.setDeps({
 // the belt-and-suspenders fallback that covers a momentarily-stale list.
 deployFeature.setDeps({
   generatedFiles: () => [
-    ...blocklistsFeature.GENERATED_FILES,
+    ...blocklistsFeature.getGeneratedFiles(),
     ...dockerAutoconfigFeature.getGeneratedFiles(),
     ...agentsFeature.getGeneratedFiles(),
   ],
@@ -677,6 +718,11 @@ async function handleRequest(req, res) {
   if (!session && AGENT_TOKEN_ROUTES.has(`${req.method} ${pathname}`)) {
     session = authenticateAgentToken(req);
   }
+  // Jeton de synchronisation de certificats : uniquement ses trois routes.
+  if (!session && CERTSYNC_TOKEN_ROUTES.has(`${req.method} ${pathname}`)) {
+    session = authenticateCertsyncToken(req);
+    if (session) session.ip = reqClientIp;
+  }
   if (!session) return send(res, 401, { error: 'Unauthorized. Login at /auth/login or pass Authorization: Bearer <token>.' });
 
   // SECURITY (fix, audit finding SEC-12): CSRF guard for state-changing
@@ -762,7 +808,7 @@ async function handleRequest(req, res) {
     return send(res, 200, { sessions: list, count: list.length });
   }
 
-  // ── Nginx Control ─────────────────────────────────────────────────────────
+  // ── NGX Ops ─────────────────────────────────────────────────────────
   if (pathname === '/api/webhooks') {
     if (!hasPerm(session, PERMS.MANAGE_WEBHOOKS)) return send(res, 403, { error: 'Forbidden' });
     if (req.method === 'GET') return send(res, 200, { webhooks });
@@ -939,7 +985,7 @@ async function fetchVersionFile(fileUrl, depth = 5) {
     try {
       const proto = fileUrl.startsWith('https') ? require('https') : http;
       const req = proto.request(
-        Object.assign(new URL(fileUrl), { method: 'GET', headers: { 'User-Agent': 'nginx-dashboard' }, timeout: 8000 }),
+        Object.assign(new URL(fileUrl), { method: 'GET', headers: { 'User-Agent': cfg.HTTP_USER_AGENT }, timeout: 8000 }),
         (res) => {
           if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
             resolve(fetchVersionFile(res.headers.location, depth - 1));
@@ -1196,7 +1242,9 @@ ensureRenewalContainerAtBoot().catch(() => {});
 ensureCertbotDnsContainerAtBoot().catch(() => {});
 ensureGeoipupdateContainerAtBoot().catch(() => {});
 ensureErrorPagesContainerAtBoot().catch(() => {});
+ensureChallengeContainerAtBoot().catch(() => {});
 analyzerFeature.ensureContainerAtBoot().catch(() => {});
+wafFeature.ensureContainerAtBoot().catch(() => {});
 server.listen(PORT, () => {
   const imageVersion = process.env.APP_VERSION || VERSION;
   const imageMismatch = imageVersion !== VERSION ? ` (code: ${VERSION})` : '';

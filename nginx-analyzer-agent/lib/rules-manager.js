@@ -14,9 +14,78 @@
  */
 
 const { RULE_IDS } = require('./detect');
-const { parseAndValidate, stringifyRules } = require('./rules-yaml');
+const { parseAndValidate, stringifyRules, MAX_BLOCKLIST_WINDOW_MINUTES, MAX_BLOCKLIST_REMEDIATION_MINUTES, REMEDIATION_TYPES } = require('./rules-yaml');
 
 const BUILTIN_KEYS = Object.keys(RULE_IDS); // ['bruteforce','scan','flood','scraping','volumetric','country_traffic']
+
+// Defaut "eteint" pour chaque regle integree — meme convention de securite
+// que le reste du mecanisme "Blocklist a la CrowdSec" (v12.49.4/v12.50.0) :
+// une regle ne contribue a la blocklist automatique que si l operateur lui a
+// explicitement donne un `threshold`, et ne bloque reellement (`remediation`)
+// que si celui-ci vaut litteralement true.
+const BLOCKLIST_DEFAULTS = Object.freeze({
+  threshold: null, windowMinutes: 1440, remediation: false, remediationMinutes: null, remediationType: 'block',
+});
+
+/** Validate+clamp one builtin rule's blocklist config. Returns { ok, errors, value }. */
+function normalizeBlocklistConfig(input = {}) {
+  const errors = [];
+  let threshold = null;
+  if (input.threshold != null) {
+    if (!Number.isFinite(+input.threshold) || +input.threshold < 1) {
+      errors.push('"threshold" doit etre un entier >= 1 (ou absent/null pour desactiver)');
+    } else threshold = Math.round(+input.threshold);
+  }
+  let windowMinutes = BLOCKLIST_DEFAULTS.windowMinutes;
+  if (input.windowMinutes != null) {
+    if (!Number.isFinite(+input.windowMinutes) || +input.windowMinutes < 1) {
+      errors.push('"windowMinutes" doit etre un entier >= 1');
+    } else windowMinutes = Math.min(MAX_BLOCKLIST_WINDOW_MINUTES, Math.round(+input.windowMinutes));
+  }
+  let remediationMinutes = null;
+  if (input.remediationMinutes != null) {
+    if (!Number.isFinite(+input.remediationMinutes) || +input.remediationMinutes < 1) {
+      errors.push('"remediationMinutes" doit etre un entier >= 1 (ou absent/null)');
+    } else remediationMinutes = Math.min(MAX_BLOCKLIST_REMEDIATION_MINUTES, Math.round(+input.remediationMinutes));
+  }
+  const remediation = input.remediation === true;
+  let remediationType = 'block';
+  if (input.remediationType != null) {
+    if (!REMEDIATION_TYPES.has(String(input.remediationType))) errors.push('"remediationType" doit valoir block ou challenge');
+    else remediationType = String(input.remediationType);
+  }
+  if (errors.length) return { ok: false, errors, value: null };
+  return { ok: true, errors: [], value: { threshold, windowMinutes, remediation, remediationMinutes, remediationType } };
+}
+
+// Limites defensives : la map vient du dashboard (donc de fichiers vhost edites
+// a la main) ; on borne tout pour qu un fichier mal forme ne puisse pas gonfler
+// la memoire ni le cout par requete de Detector.add().
+const MAX_PATHS_IGNORE_PER_RULE = 50;
+const MAX_PATH_IGNORE_LEN = 256;
+
+/**
+ * { "1": ["/a", "/b*"], ... } -> Map<number, string[]>. Un motif est un chemin
+ * exact (sans query string) ou un prefixe termine par "*". Les motifs qui ne
+ * commencent pas par "/" sont rejetes (un motif vide ou "*" masquerait tout).
+ */
+function sanitizePathsIgnore(raw) {
+  const out = new Map();
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, list] of Object.entries(raw)) {
+    const id = Number(k);
+    if (!Number.isInteger(id) || id < 0 || !Array.isArray(list)) continue;
+    const pats = [];
+    for (const v of list) {
+      const pat = String(v).trim();
+      if (pat.length < 1 || pat.length > MAX_PATH_IGNORE_LEN || pat[0] !== '/') continue;
+      if (!pats.includes(pat)) pats.push(pat);
+      if (pats.length >= MAX_PATHS_IGNORE_PER_RULE) break;
+    }
+    if (pats.length) out.set(id, pats);
+  }
+  return out;
+}
 
 class RulesManager {
   /**
@@ -28,9 +97,23 @@ class RulesManager {
     const persisted = store.getState('rule_state') || {};
     this.state = {};
     for (const key of BUILTIN_KEYS) {
-      this.state[key] = persisted[key] !== undefined ? !!persisted[key]
-                       : envDefaults[key] !== undefined ? !!envDefaults[key]
-                       : true;
+      // Fix/migration (v12.50.0): `rule_state[key]` used to be a plain
+      // boolean (enable/disable only). It is now `{ enabled, blocklist }` so
+      // each builtin rule can also carry its own "Blocklist a la CrowdSec"
+      // threshold/remediation — see BLOCKLIST_DEFAULTS above. A
+      // pre-v12.50.0 persisted value (a bare boolean, or nothing yet) is
+      // transparently upgraded to the new shape on load, so an existing
+      // deployment's enable/disable choices are never lost, and every rule
+      // starts with blocklist disabled (threshold: null) until the operator
+      // opts in.
+      const p = persisted[key];
+      const enabled = (typeof p === 'boolean') ? p
+                     : (p && typeof p === 'object' && p.enabled !== undefined) ? !!p.enabled
+                     : envDefaults[key] !== undefined ? !!envDefaults[key]
+                     : true;
+      const blocklistPersisted = (p && typeof p === 'object' && p.blocklist) ? p.blocklist : {};
+      const { value: blocklist } = normalizeBlocklistConfig(blocklistPersisted);
+      this.state[key] = { enabled, blocklist };
     }
 
     const customRaw = store.getState('custom_rules_yaml');
@@ -46,14 +129,59 @@ class RulesManager {
     this.vhostRules = new Map();
   }
 
-  isEnabled(key) { return this.state[key] !== false; }
+  isEnabled(key) { return this.state[key] ? this.state[key].enabled !== false : true; }
 
   /** Toggle one built-in rule and persist. Returns false for an unknown key. */
   toggle(key, enable) {
     if (!BUILTIN_KEYS.includes(key)) return false;
-    this.state[key] = !!enable;
+    this.state[key] = { ...this.state[key], enabled: !!enable };
     this.store.setState('rule_state', this.state);
     return true;
+  }
+
+  /** Current "Blocklist a la CrowdSec" config for one builtin rule (defaults if never configured). */
+  getBlocklistConfig(key) {
+    if (!BUILTIN_KEYS.includes(key)) return null;
+    return { ...BLOCKLIST_DEFAULTS, ...(this.state[key] && this.state[key].blocklist) };
+  }
+
+  /**
+   * Set one builtin rule's blocklist threshold/window/remediation/remediation
+   * duration and persist. Returns { ok, errors, value }. Rejected wholesale on
+   * validation error, same pattern as setCustomYaml() — never a partial apply.
+   */
+  setBlocklistConfig(key, input) {
+    if (!BUILTIN_KEYS.includes(key)) return { ok: false, errors: [`Regle inconnue : ${key}`], value: null };
+    const result = normalizeBlocklistConfig(input);
+    if (!result.ok) return result;
+    this.state[key] = { ...this.state[key], blocklist: result.value };
+    this.store.setState('rule_state', this.state);
+    return result;
+  }
+
+  /**
+   * Unified list of every rule (builtin + custom) that opted into the
+   * "Blocklist a la CrowdSec" mechanism (threshold configured) — this is all
+   * the dashboard's features/blocklists.js needs to compute suspicious IPs,
+   * without having to know the difference between a builtin and a custom rule.
+   */
+  listBlocklistRules() {
+    const out = [];
+    for (const key of BUILTIN_KEYS) {
+      const bl = this.getBlocklistConfig(key);
+      if (bl.threshold == null) continue;
+      out.push({ id: RULE_IDS[key], key, name: key, custom: false, ...bl });
+    }
+    for (const r of this.customValid) {
+      if (r.blocklistThreshold == null) continue;
+      out.push({
+        id: r.id, key: `custom_${r.id}`, name: r.name, custom: true,
+        threshold: r.blocklistThreshold, windowMinutes: r.blocklistWindowMinutes,
+        remediation: r.blocklistRemediation, remediationMinutes: r.blocklistRemediationMinutes,
+        remediationType: r.blocklistRemediationType || 'block',
+      });
+    }
+    return out;
   }
 
   /** Replace the custom rules from raw YAML text. Returns { ok, errors, count }. */
@@ -73,6 +201,8 @@ class RulesManager {
       map.set(String(name).toLowerCase(), {
         enabled: cfg.enabled !== false,
         ignore: new Set(Array.isArray(cfg.ignore) ? cfg.ignore.map(Number) : []),
+        // # nginx-control-analyze-rule-{ID}-paths-ignore: /a,/b  (v12.54.0)
+        pathsIgnore: sanitizePathsIgnore(cfg.pathsIgnore),
       });
     }
     this.vhostRules = map;
@@ -129,6 +259,10 @@ class RulesManager {
         learningDays: thresholds.country_traffic.learningDays, sigmaThreshold: thresholds.country_traffic.sigmaThreshold,
         minAbsoluteRequests: thresholds.country_traffic.minAbsoluteRequests,
       },
+      data_volume: () => thresholds.data_volume && {
+        learningDays: thresholds.data_volume.learningDays, sigmaThreshold: thresholds.data_volume.sigmaThreshold,
+        minAbsoluteBytes: thresholds.data_volume.minAbsoluteRequests,
+      },
     };
     const builtins = BUILTIN_KEYS.map(key => ({
       key, id: RULE_IDS[key],
@@ -136,14 +270,23 @@ class RulesManager {
       custom: false,
       explanation: explanations[key],
       config: (CONFIG_BUILDERS[key] && CONFIG_BUILDERS[key]()) || null,
+      // Config "Blocklist a la CrowdSec" propre a cette regle (v12.50.0) —
+      // voir getBlocklistConfig()/setBlocklistConfig() ci-dessus.
+      blocklist: this.getBlocklistConfig(key),
     }));
     const custom = this.customValid.map(r => ({
       key: `custom_${r.id}`, id: r.id, name: r.name,
       enabled: r.enable !== false, custom: true,
       severity: r.severity, description: r.description,
       windowMinutes: r.windowMinutes, minMatches: r.minMatches,
+      scope: r.scope || 'ip', minIps: r.scope === 'global' ? r.minIps : null,
       pathHint: r.pathHintRaw, uaHint: r.uaHintRaw,
       statusIn: r.statusIn, methodIn: r.methodIn,
+      blocklist: {
+        threshold: r.blocklistThreshold, windowMinutes: r.blocklistWindowMinutes,
+        remediation: r.blocklistRemediation, remediationMinutes: r.blocklistRemediationMinutes,
+        remediationType: r.blocklistRemediationType || 'block',
+      },
     }));
     return {
       builtins, custom, customYaml: this.customYaml, customErrors: this.customErrors,
@@ -185,4 +328,4 @@ class RulesManager {
   }
 }
 
-module.exports = { RulesManager, BUILTIN_KEYS };
+module.exports = { RulesManager, BUILTIN_KEYS, BLOCKLIST_DEFAULTS, sanitizePathsIgnore };
