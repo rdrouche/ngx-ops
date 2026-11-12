@@ -42,7 +42,7 @@ Un seul numéro de version couvre toute la suite (voir [`VERSION.md`](VERSION.md
 
 Les images sont publiées dans le registre `forge.rdr-it.com/ngx-ops/ngx-ops`. Utilisez un tag numérique en production : le tag `nightly` est une construction d'essai.
 
-NGX Ops Intelligence, plateforme de renseignement sur les menaces, est un service hébergé qui n'est pas encore ouvert au public. L'envoi d'alertes vers elle est désactivé par défaut.
+[NGX Ops Intelligence](https://intelligence.ngx-ops.net/), plateforme de renseignement sur les menaces, est un service SaaS. L'envoi d'alertes vers elle est désactivé par défaut.
 
 ## Démarrage rapide
 

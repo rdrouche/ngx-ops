@@ -42,7 +42,7 @@ A single version number covers the whole suite (see [`VERSION.md`](VERSION.md)).
 
 Images are published in the registry `forge.rdr-it.com/ngx-ops/ngx-ops`. Use a numeric tag in production: the `nightly` tag is a test build.
 
-NGX Ops Intelligence, a threat-intelligence platform, is a hosted service that is not yet open to the public. Sending alerts to it is disabled by default.
+[NGX Ops Intelligence](https://intelligence.ngx-ops.net/), a threat-intelligence platform, is a SaaS service. Sending alerts to it is disabled by default.
 
 ## Quick start
 
