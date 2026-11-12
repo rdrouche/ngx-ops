@@ -1,0 +1,39 @@
+# NGX Ops Hub (v12.76.0) — sauvegarde de la configuration vers le Hub.
+# Les SECRETS ne vont jamais ici : variables d'environnement HUB_TOKEN_SHA256,
+# HUB_BACKUP_TOKEN_SHA256, HUB_PUSH_TOKEN, HUB_BACKUP_PASSPHRASE (voir Système).
+
+# URL du Hub (http/https, sans identifiants). Requise pour le push.
+hub_url:
+
+# Active la sauvegarde (push planifié « Sauvegarde vers le Hub » et pull par le Hub).
+backup_enable: false
+
+# Catégories : nginx (sites, conf, snippets, streams) · ngxops (config/*.yml|json) ·
+# env (variables effectives, secrets masqués) · ssl (dossier ssl/, opt-in)
+backup_include: [nginx, ngxops, env]
+
+# Inclure les fichiers secrets (users.yml, mfa.json, smtp.yml, .generated-secrets.json,
+# clés privées). EXIGE HUB_BACKUP_PASSPHRASE (ou, à défaut, BACKUP_PASSPHRASE) : l'archive est alors chiffrée (AES-256-GCM).
+backup_include_secrets: false
+
+# Rétention demandée au Hub (jours) — le Hub l'applique.
+retention_days: 30
+
+# Délai maximal d'envoi (secondes).
+push_timeout_s: 60
+
+# Modules de données lisibles par le Hub (GET /api/hub/v1/<module>, jeton HUB_TOKEN_SHA256).
+# Défaut : tous. Un module absent de la liste répond 404 comme s'il n'existait pas.
+#   inventory   vhosts, backends, certificats (domaine, expiration, émetteur), nginx (version, modules), agents distants
+#   traffic     séries horaires (global + top vhosts), pays, vhosts, humains/robots (par vhost et par pays)
+#   security    blocklists (sources, hits), challenge (stats, blocages), WAF (règles), CrowdSec (décisions), alertes par type
+#   ops         journal des événements/audit (qui a changé quoi), tâches planifiées + exécutions, digests
+#   monitoring  cibles de supervision des vhosts + incidents (vide si le monitoring n'est pas activé)
+#   reports     règles d'analyse (activées/désactivées), exceptions, baselines apprises
+#   indicators  corrélation : une ligne par IP avec toutes les sources qui la connaissent (EXIGE expose_ips: true)
+expose_modules: [inventory, traffic, security, ops, monitoring, reports, indicators]
+
+# Exposer les adresses IP des visiteurs dans les alertes (GET /api/hub/v1/alerts|security) :
+# nécessaire pour corréler les attaques entre plusieurs instances NGX Ops. Désactivé par défaut
+# (les IP sont alors retirées de chaque alerte ; seul leur nombre est donné).
+expose_ips: false

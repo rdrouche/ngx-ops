@@ -368,6 +368,24 @@ function register(router) {
     } catch (e) { return httpLib.serverError(res, e); }
   });
 
+  // Decision CrowdSec COURANTE pour une IP (fiche IP des Journaux, #64) : interrogation a la demande
+  // du LAPI, rien n'est stocke. Pas d'historique : seulement ce qui est actif maintenant.
+  router.get('/api/crowdsec/ip', async ({ res, session, url }) => {
+    if (!hasPerm(session, PERMS.VIEW_CROWDSEC)) return httpLib.forbidden(res);
+    const c = getCrowdsecCfg();
+    if (!(c.url && c.apiKey)) return send(res, 200, { configured: false });
+    const ip = (url.searchParams.get('ip') || '').trim();
+    if (!require('net').isIP(ip)) return send(res, 400, { error: 'invalid_ip' });
+    try {
+      const r = await crowdsecGet(`/v1/decisions?ip=${encodeURIComponent(ip)}`);
+      const decisions = (Array.isArray(r) ? r : []).slice(0, 20).map(d => ({
+        type: String(d.type || ''), scenario: String(d.scenario || ''), origin: String(d.origin || ''),
+        duration: String(d.duration || ''), scope: String(d.scope || ''), value: String(d.value || ''),
+      }));
+      return send(res, 200, { configured: true, decisions });
+    } catch (e) { return httpLib.serverError(res, e); }
+  });
+
   router.get('/api/crowdsec/alerts', async ({ res, session, url }) => {
     if (!hasPerm(session, PERMS.VIEW_CROWDSEC)) return httpLib.forbidden(res);
     if (!crowdsecConfigured()) return send(res, 200, { configured: false });

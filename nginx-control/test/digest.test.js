@@ -144,7 +144,7 @@ console.log('\nformatDigestText — rendu texte pour l e-mail');
 await (async () => {
   const d = {
     generatedAt: Date.now(), periodHours: 24,
-    traffic: { totalRequests: 1234, totalBytes: 5_000_000, totalErrors: 3 },
+    traffic: { totalRequests: 1234, totalBytes: 5_000_000, totalErrors: 3, byVhost: [] },
     bots: { total: 1234, human: 1000, bots: 234, byCategory: [] },
     topCountries: [{ country: 'FR', requests: 800 }],
     crowdsec: { configured: true, activeTotal: 2, byOrigin: { crowdsec: 2 } },
@@ -157,7 +157,7 @@ await (async () => {
   const text = digest.formatDigestText(d);
   await check('contient les chiffres cles, lisible en texte brut', () => {
     assert.ok(/1.?234/.test(text), 'le nombre 1234 doit apparaitre, quel que soit le separateur de milliers utilise par la locale');
-    assert.ok(text.includes('FR'));
+    assert.ok(text.includes('France') || text.includes('FR'));
     assert.ok(text.includes('site.fr'));
     assert.ok(!text.includes('<'), 'pas de balises HTML dans un rendu texte brut');
   });

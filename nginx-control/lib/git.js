@@ -168,8 +168,20 @@ function getGitCfg() {
 // boot.
 const GIT_KNOWN_HOSTS_FILE = path.join(cfg.CONFIG_DIR, '.git_known_hosts');
 
+const GIT_ASKPASS_FILE = path.join(__dirname, '..', 'tools', 'git-askpass.sh');
+
 function gitEnv(g) {
   const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+  // Jeton HTTPS : en plus de l'URL, git peut le redemander (redirection du forge,
+  // ex. /depot.git -> /depot.git/ : les identifiants de l'URL ne suivent pas). Réponse
+  // via GIT_ASKPASS, limitée à l'hôte du dépôt.
+  if (g.token && /^https:\/\//.test(g.repoUrl || '') && fs.existsSync(GIT_ASKPASS_FILE)) {
+    try {
+      env.NGX_GIT_HOST = new URL(g.repoUrl).hostname;
+      env.NGX_GIT_TOKEN = g.token;
+      env.GIT_ASKPASS = GIT_ASKPASS_FILE;
+    } catch { /* URL invalide : rejetée ailleurs */ }
+  }
   if (g.sshKey) {
     // Still a single string, but it is handed to git as GIT_SSH_COMMAND, not
     // built into an exec()'d shell line — git itself splits and runs it.

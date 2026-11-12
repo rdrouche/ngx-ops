@@ -15,9 +15,6 @@ let pass = 0, fail = 0;
 const checks = [];
 const check = (n, f) => checks.push([n, f]);
 
-let analyzerYaml = null;
-try { analyzerYaml = require('../../nginx-analyzer/lib/rules-yaml'); } catch { /* dashboard seul */ }
-
 const asRules = packs => {
   let id = 100;
   return packs.flatMap(p => p.rules).map(r => ({ ...r, id: id++ }));
@@ -49,28 +46,6 @@ check('modèles : regex compatibles RE2 (pas d anticipation ni de reference arri
   }
 });
 
-check('modèles : le YAML généré est relu à l identique par le chargeur de l analyzer', () => {
-  if (!analyzerYaml) return;
-  const { rules } = out.normalizeRules(asRules(templates.listTemplates('fr')));
-  const y = out.rulesToYaml(rules);
-  const p = analyzerYaml.parseAndValidate(y);
-  assert.deepStrictEqual(p.errors, []);
-  assert.strictEqual(p.valid.length, rules.length);
-  rules.forEach((r, i) => {
-    const v = p.valid[i];
-    assert.strictEqual(v.pathHintRaw, r.pathHint || null, r.name);
-    assert.strictEqual(v.uaHintRaw, r.uaHint || null, r.name);
-    assert.strictEqual(v.minMatches, r.minMatches);
-    assert.strictEqual(v.scope, r.scope);
-    assert.strictEqual(v.enable, r.enable);
-    assert.deepStrictEqual(v.statusIn, r.statusIn);
-    assert.deepStrictEqual(v.methodIn, r.methodIn);
-    assert.strictEqual(v.description, r.description);
-    assert.strictEqual(v.blocklistThreshold, r.blocklist.threshold);
-    assert.strictEqual(v.blocklistRemediationMinutes, r.blocklist.remediationMinutes);
-  });
-});
-
 check('modèle Forgejo : correspond aux requêtes du botnet, pas au runner ni à une page normale', () => {
   const f = templates.PACKS.find(p => p.id === 'forgejo').rules;
   const re = slug => new RegExp(f.find(r => r.slug === slug).pathHint, 'i');
@@ -97,11 +72,6 @@ check('génération : échappements, listes, global, aller-retour', () => {
   assert.deepStrictEqual(errors, []);
   const y = out.rulesToYaml(rules);
   assert.ok(y.includes("path_hint: '\\.env|it''s'") && y.includes('scope: global\n    min_ips: 10') && y.includes("method_in: ['GET']"));
-  if (analyzerYaml) {
-    const p = analyzerYaml.parseAndValidate(y);
-    assert.deepStrictEqual(p.errors, []);
-    assert.strictEqual(p.valid[0].pathHintRaw, "\\.env|it's");
-  }
 });
 
 check('validation : refus (id, nom, regex, RE2, saut de ligne, critère absent, doublons)', () => {

@@ -117,6 +117,8 @@ func TestServer_AutoblockEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := s.Handler()
+	clock := time.Now()
+	s.off.now = func() time.Time { clock = clock.Add(3 * time.Second); return clock } // > anti double-comptage
 	do := func(path, ip, method string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, nil)
 		req.Host = "a.example.com"
@@ -156,5 +158,46 @@ func TestConfig_AutoblockEnvValidation(t *testing.T) {
 	c, err := LoadConfig(func(k string) string { return "" })
 	if err != nil || c.Offenders.Autoblock || c.Offenders.Threshold != 30 {
 		t.Fatalf("défauts: %+v %v", c.Offenders, err)
+	}
+}
+
+// Une navigation = document + favicon + ressources, tous renvoyés vers la page de vérification :
+// ce doit compter pour UN seul échec (et jamais pour une sous-ressource déclarée par le navigateur).
+func TestCheck_OneNavigationIsOneFailure(t *testing.T) {
+	cfg, _ := LoadConfig(func(k string) string {
+		return map[string]string{"NC_AUTOBLOCK": "true", "NC_AUTOBLOCK_THRESHOLD": "3"}[k]
+	})
+	s, _ := New(cfg)
+	h := s.Handler()
+	call := func(dest string) int {
+		req := httptest.NewRequest("GET", "/check", nil)
+		req.Host = "a.example.com"
+		req.Header.Set("X-Real-IP", "203.0.113.77")
+		if dest != "" {
+			req.Header.Set("Sec-Fetch-Dest", dest)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w.Code
+	}
+	for i := 0; i < 20; i++ { // 20 navigations avec, chacune, document + favicon + image + fetch (même seconde)
+		call("document")
+		call("image")
+		call("image")
+		call("empty")
+		call("script")
+	}
+	rep := s.off.Report(24, 1, 10, false)
+	if len(rep) != 1 || rep[0].Redirected != 1 {
+		t.Fatalf("une rafale doit compter pour 1 redirection (debounce), obtenu %+v", rep)
+	}
+	if c := call("document"); c == http.StatusForbidden {
+		t.Fatal("un visiteur ne doit pas être bloqué par des sous-ressources")
+	}
+	if got := s.stats.Snapshot(24).Total.Redirected; got != 101 {
+		t.Fatalf("les stats globales gardent toutes les redirections : %d", got)
+	}
+	if IsNavigation("image") || IsNavigation("empty") || !IsNavigation("") || !IsNavigation("document") {
+		t.Fatal("IsNavigation")
 	}
 }

@@ -1017,9 +1017,21 @@ async function pushBlocklistSources() {
     }
   }
   const mode = settings.hitLogging?.method === 'approx' ? 'approx' : 'dedicated';
-  try { await analyzerApiJson('/api/blocklist-sources', 'POST', { mode, sources }); }
-  catch { /* analyzer unreachable — next tick (<=30s) retries, same as pushVhostRules */ }
+  const sent = Object.values(sources).reduce((n, s) => n + s.ips.length, 0);
+  // v12.77.0 : avant, une réponse en erreur (413 « corps trop gros » avec 200 k IP) était ignorée
+  // en silence et l'analyzer perdait toute attribution par liste → « Aucun hit sur la période ».
+  // Délai relevé (8 s → 60 s : plusieurs Mo) et résultat conservé, visible dans l'état.
+  const rec = { at: new Date().toISOString(), ok: false, sources: Object.keys(sources).length, ips: sent, status: null, error: null };
+  try {
+    const r = await analyzerApiJson('/api/blocklist-sources', 'POST', { mode, sources }, { timeoutMs: 60_000 });
+    if (!r) rec.error = 'analyzer unreachable';
+    else { rec.status = r.status; rec.ok = r.status >= 200 && r.status < 300; if (!rec.ok) rec.error = r.data?.error || `HTTP ${r.status}`; }
+  } catch (e) { rec.error = e.message; }
+  if (!rec.ok && lastSourcesPush.ok !== false) logEvent('blocklist.analyzer_sync_failed', { error: rec.error, ips: sent }, 'blocklists');
+  lastSourcesPush = rec;
 }
+let lastSourcesPush = { at: null, ok: null, sources: 0, ips: 0, status: null, error: null };
+function getSourcesPushState() { return lastSourcesPush; }
 
 // ─── IP search ────────────────────────────────────────────────────────────────
 /**
@@ -1176,6 +1188,26 @@ function getExportableIps(sourceName, { includeDetected = false } = {}) {
   return { ok: true, source: name, type: isAnalyzer ? 'analyzer' : isWaf ? 'waf' : isChallenge ? 'challenge' : 'url', ips: [...raw].sort() };
 }
 
+/**
+ * v12.75.0 — IP publiables (URL publique, sans API) : sources actives hors action « challenge »,
+ * hors liste blanche. `name` = 'all' (fusion des sources autorisees par public_sources) ou une source.
+ */
+function getPublicIps(name) {
+  const { settings, valid: sources, whitelist } = loadConfig();
+  const pub = settings.public;
+  if (!settings.enable || !pub.enable) return { ok: false, reason: 'disabled' };
+  const cache = loadCache();
+  const usable = sources.filter(s => s.enable && s.action !== 'challenge' && s.type !== 'challenge'
+    && (pub.sources.includes('all') || pub.sources.includes(s.name)));
+  const pick = name === 'all' ? usable : usable.filter(s => s.name === name);
+  if (!pick.length) return { ok: false, reason: 'unknown' };
+  const merged = new Set();
+  for (const s of pick) for (const ip of (cache.sources?.[s.name]?.ips || [])) merged.add(ip);
+  const ips = [...merged].filter(ip => !whitelist.some(w => ipInCidr(ip, w))).sort();
+  return { ok: true, ips, sources: pick.map(s => s.name), token: pub.token };
+}
+function getPublicSettings() { return loadConfig().settings.public; }
+
 // ─── Hit stats (Digest + effectiveness) ──────────────────────────────────────
 /**
  * Pulls the analyzer's blocklist-hits window summary — total hits, distinct
@@ -1218,6 +1250,7 @@ async function getHitStats({ hours = 24 } = {}) {
       uniqueHitIps: data.uniqueIps || 0,
       topIps: (Array.isArray(data.topIps) ? data.topIps : []).slice(0, 20),
       bySource: Array.isArray(data.bySource) ? data.bySource : [],
+      sourcesSync: lastSourcesPush,
     };
     hitStatsCache = { hours, at: Date.now(), result };
     return result;
@@ -1337,6 +1370,7 @@ function getBlocklistStatus() {
     sources.filter(s => s.enable).flatMap(s => cache.sources?.[s.name]?.ips || [])
   ).size;
   return {
+    publicList: { enable: settings.public.enable, tokenSet: !!settings.public.token, tokenInvalid: settings.public.tokenInvalid },
     enable: settings.enable, intervalCron: settings.intervalCron, blockAction: settings.blockAction,
     hitLogging: settings.hitLogging,
     configErrors, sources, totalUniqueIps, whitelist,
@@ -1550,7 +1584,7 @@ function register(router) {
 module.exports = {
   register, setDeps, ensureSnippetsAtBoot, refreshBlocklists, unblockAnalyzerIp, getBlocklistStatus, startBlocklistScheduler,
   computeChallengeFiles, getChallengeFilesState, applyChallengeFiles, reconcileDisabled, isChallengePaused, setChallengePaused,
-  checkIp, explainWafIps, getHitStats, getDigestStats, pushBlocklistSources, getExportableIps,
+  checkIp, explainWafIps, getPublicIps, getPublicSettings, getHitStats, getDigestStats, pushBlocklistSources, getExportableIps,
   // consumed by server.js to wire into features/deploy.js's setDeps()
   GENERATED_FILES, getGeneratedFiles,
   // exported for tests

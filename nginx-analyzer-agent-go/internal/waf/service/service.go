@@ -23,16 +23,24 @@ import (
 
 // Config : configuration du service (variables d'environnement du contrat).
 type Config struct {
-	Version            string
-	LogsDir            string
-	LogPattern         *regexp.Regexp
-	WafLogPattern      *regexp.Regexp
-	DataDir            string
-	RulesDir           string
-	CRSVersion         string
-	CRSURLTemplate     string
-	HitRetentionDays   int
-	AlertRetentionDays int
+	Version          string
+	LogsDir          string
+	LogPattern       *regexp.Regexp
+	WafLogPattern    *regexp.Regexp
+	DataDir          string
+	RulesDir         string
+	CRSVersion       string
+	CRSURLTemplate   string
+	HitRetentionDays int
+	// Compactage de waf.db au demarrage (#100) : auto | always | off, seuils en Mo et % de pages libres.
+	DBCompactOnStart    string
+	DBCompactMinFreeMb  int
+	DBCompactMinFreePct int
+	AlertRetentionDays  int
+
+	// Decisions : destinataire facultatif des hits (client local du shipper, vers le log store).
+	// nil = aucun envoi, comportement inchange.
+	Decisions Emitter
 
 	// Reglages internes (tests / ajustements) ; zero = valeur par defaut.
 	PollMs        int
@@ -112,6 +120,15 @@ type Service struct {
 // New construit le service (sans le demarrer). Une base SQLite indisponible n'est pas
 // fatale : le service tourne alors sans persistance (erreur journalisee).
 func New(cfg Config) (*Service, error) {
+	if cfg.DBCompactOnStart == "" {
+		cfg.DBCompactOnStart = "auto"
+	}
+	if cfg.DBCompactMinFreeMb <= 0 {
+		cfg.DBCompactMinFreeMb = 16
+	}
+	if cfg.DBCompactMinFreePct <= 0 {
+		cfg.DBCompactMinFreePct = 20
+	}
 	if cfg.HitRetentionDays <= 0 {
 		cfg.HitRetentionDays = 30
 	}
@@ -133,6 +150,7 @@ func New(cfg Config) (*Service, error) {
 		log.Printf("[waf] SQLite indisponible, fonctionnement sans persistance : %v", err)
 		st = store.Disabled()
 	}
+	st.CompactOnStart(cfg.DBCompactOnStart, cfg.DBCompactMinFreeMb, cfg.DBCompactMinFreePct)
 	dl := cfg.Downloader
 	if dl == nil {
 		dl = crs.NewDownloader(cfg.CRSURLTemplate)

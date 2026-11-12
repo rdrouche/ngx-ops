@@ -177,7 +177,7 @@ function appendLineDOM(line) {
       <span class="ll-time">${h(line.time||'')}</span>
       <span class="ll-status ${scClass}">${line.status||'?'}</span>
       ${line.vhost ? `<span class="ll-vhost" title="${h(line.vhost)}">${h(line.vhost)}</span>` : ''}
-      <span class="ll-ip" title="${buildGeoTip(line)}">${h(line.ip||'')}${line.geo?.country?' '+countryFlag(line.geo.country):''}</span>
+      <span class="ll-ip" title="${buildGeoTip(line)}">${h(line.ip||'')}${line.geo?.country?' '+countryFlag(line.geo.country):''}${window.NgxIp ? NgxIp.badgeHtml(line.ip) : ''}</span>
       <span class="ll-method">${h(method)}</span>
       <span class="ll-path" title="${h(reqPath)}">${h(reqPath)}</span>
       <span class="ll-bytes">${fmtB(line.bytes)}</span>

@@ -16,7 +16,7 @@
 // (choix initial du projet, pur Go/CGO-free) est inaccessible depuis ce
 // bac a sable de developpement (hote bloque par la politique reseau) ; le
 // pilote retenu ici, github.com/ncruces/go-sqlite3, est egalement pur Go
-// (SQLite compile en WASM, execute via wazero), sans CGO, et garde donc le
+// (SQLite traduit en Go, sans wazero depuis go-sqlite3 0.37), sans CGO, et garde donc le
 // meme objectif de binaire statique multi-arch facile sur Alpine. Si
 // l'ouverture echoue, l'agent degrade en memoire seule plutot que de refuser
 // de demarrer : la detection de signatures continue de fonctionner, seul
@@ -31,7 +31,6 @@ import (
 	"sync"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
 // Retention definit les paliers de conservation, cf. RETENTION en JS.
@@ -158,6 +157,7 @@ type Store struct {
 	memBotBuckets map[botBucketKey]int64
 	memAlerts     []Alert
 	memAlertSeq   int64
+	onAlert       func(Alert) // #110 : voir SetAlertHook
 	memExceptions []Exception
 	memWaf        []WafEvent
 	memWafSeq     int64
@@ -302,7 +302,7 @@ func (s *Store) open() {
 }
 
 func (s *Store) tryOpen() (db *sql.DB, err error) {
-	// Le pilote SQLite execute SQLite en WebAssembly (wazero) : sur un hote qui
+	// Le pilote SQLite (Go pur) : sur un hote qui
 	// refuse la memoire executable ou une allocation, l'initialisation peut
 	// paniquer. Comme toute autre erreur d'ouverture, cela doit mener au repli
 	// memoire (l'API reste joignable) et non faire tomber l'agent.

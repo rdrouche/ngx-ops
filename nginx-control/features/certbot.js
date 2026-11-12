@@ -27,6 +27,7 @@ const cfg     = require('../lib/config');
 const httpLib = require('../lib/http');
 const auth    = require('../lib/auth');
 const docker  = require('../lib/docker');
+const lifecycle = require('../lib/container-lifecycle');
 const certs   = require('../lib/certs');
 const events  = require('../lib/events');
 const { pushNotification } = require('../lib/notifications');
@@ -540,18 +541,9 @@ function register(router) {
     const cfg = getCertbotCfg();
     if (!cfg?.enable) return httpLib.badRequest(res, 'Certbot not enabled');
     const image = cfg.container_image || 'certbot/certbot:latest';
-    const result = await docker.pullAndCheckUpdate(image);
-    if (!result.ok) return send(res, 200, { ok: false, error: result.error });
-    let recreated = false;
-    if (result.updated) {
-      const status = await certbotContainerStatus();
-      if (status.exists) {
-        try { await certbotStartContainer(cfg); recreated = true; }
-        catch (e) { return send(res, 200, { ok: true, pulled: true, updated: true, recreated: false, recreateError: e.message }); }
-      }
-    }
-    logEvent('certbot_image_update', `Image ${image} ${result.updated ? 'updated' : 'already up to date'}${recreated ? ', container recreated' : ''}`);
-    return send(res, 200, { ok: true, pulled: true, updated: result.updated, recreated });
+    const out = await lifecycle.legacyImageUpdate('certbot');
+    logEvent('certbot_image_update', `Image ${image} ${out.updated ? 'updated' : 'already up to date'}${out.recreated ? ', container recreated' : ''}`);
+    return send(res, 200, out);
   });
 
   router.post('/api/certbot/issue', async ({ req, res, session, url }) => {
@@ -601,5 +593,18 @@ function register(router) {
     } catch(e) { return httpLib.serverError(res, e); }
   });
 }
+
+// ─── Cycle de vie uniforme (#104) ────────────────────────────────────────────
+lifecycle.register({
+  id: 'certbot', label: 'Certbot (HTTP)', page: 'certbot',
+  enabled: () => !!(getCertbotCfg() || {}).enable,
+  containerName: () => CERTBOT_CONTAINER_NAME,
+  image: () => (getCertbotCfg() || {}).container_image || 'certbot/certbot:latest',
+  create: async () => {
+    const cfg = getCertbotCfg();
+    await certbotPullImage(cfg.container_image || 'certbot/certbot:latest');
+    return certbotStartContainer(cfg);
+  },
+});
 
 module.exports = { register, getCertbotCfg, loadCertbotConfig, CERTBOT_CONTAINER_NAME, buildCertbotArgs, applyStagingOverride, certbotTrustExtras, resolveCertsHostPath, resolveWebrootNginxPath, ensureRenewalContainerAtBoot, issueCertificate, extractCertbotError };

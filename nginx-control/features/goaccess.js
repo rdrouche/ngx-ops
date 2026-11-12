@@ -32,6 +32,7 @@ const cfg     = require('../lib/config');
 const httpLib = require('../lib/http');
 const auth    = require('../lib/auth');
 const docker  = require('../lib/docker');
+const lifecycle = require('../lib/container-lifecycle');
 const events  = require('../lib/events');
 
 const { PERMS, hasPerm, roleHasPerm, parseCookies, validateSession } = auth;
@@ -148,6 +149,20 @@ function ensureGoAccessConf(type) {
   return type === 'combined' ? confCombined : confVhost;
 }
 
+/** Démarrage : simple vérification locale (aucun téléchargement) — GoAccess n'est tiré que s'il sert (v12.78.0). */
+async function checkGoAccessImage() {
+  const image = getGoaccessCfg().image;
+  if (!image) { GOACCESS_IMAGE_STATUS = 'error'; GOACCESS_IMAGE_ERROR = 'GOACCESS_IMAGE not set'; return; }
+  const r = await dockerCall('GET', `/images/${encodeURIComponent(image)}/json`);
+  GOACCESS_IMAGE_STATUS = r.status === 200 ? 'ready' : 'absent'; // 'absent' : tirée à la 1re utilisation
+}
+
+/** Avant de lancer un conteneur GoAccess : tire l'image seulement si elle manque. */
+async function ensureGoAccessImage() {
+  if (GOACCESS_IMAGE_STATUS !== 'ready') await checkGoAccessImage();
+  if (GOACCESS_IMAGE_STATUS !== 'ready') await pullGoAccessImage();
+}
+
 async function pullGoAccessImage() {
   const image = getGoaccessCfg().image;
   if (!image) { GOACCESS_IMAGE_STATUS = 'error'; GOACCESS_IMAGE_ERROR = 'GOACCESS_IMAGE not set'; return; }
@@ -255,6 +270,8 @@ async function startGoAccessContainer(sourceId, logPath, opts = {}) {
   const confFile   = ensureGoAccessConf(logFormat);
   const confInContainer = '/etc/goaccess/goaccess.conf';
   console.log(`[goaccess] ${path.basename(logPath)} → format: ${logFormat} → conf: ${path.basename(confFile)}`);
+
+  await ensureGoAccessImage();
 
   // Remove existing stopped container if present
   const existing = await getGoAccessContainerStatus(sourceId);
@@ -674,11 +691,52 @@ async function handleUpgrade(req, socket, head) {
   proxyGoAccessWS(req, socket, head, proxy.host, proxy.port);
 }
 
+// ─── Cycle de vie uniforme (#104) : un descripteur par source de logs (« goaccess:<sourceId> ») ───
+// Seuls les conteneurs existants sont listes (vue d'ensemble, « tout mettre a jour »). Les options choisies au
+// demarrage (persistance, GeoIP) sont relues sur le conteneur existant pour etre conservees a la recreation.
+async function goAccessExistingOpts(name) {
+  const r = await dockerCall('GET', `/containers/${encodeURIComponent(name)}/json`);
+  if (r.status !== 200) return { persist: true, geoip: false };
+  const cmd = (r.body && r.body.Config && r.body.Config.Cmd) || [];
+  return { persist: cmd.includes('--persist'), geoip: cmd.some((c) => String(c).startsWith('--geoip-database')) };
+}
+
+lifecycle.registerProvider('goaccess', {
+  resolve(key) {
+    const source = listGoAccessSources().find((s) => s.id === key);
+    if (!source) return null;
+    const name = goAccessContainerName(key);
+    return {
+      label: `GoAccess (${source.vhost})`, page: 'goaccess',
+      enabled: () => goAccessConfigured(),
+      containerName: () => name,
+      image: () => getGoaccessCfg().image,
+      create: async () => {
+        const opts = await goAccessExistingOpts(name);
+        const st = await getGoAccessContainerStatus(key);
+        if (st.exists) {
+          clearGoAccessProxyCache(key);
+          await dockerCall('POST', `/containers/${encodeURIComponent(st.id)}/stop?t=10`).catch(() => {});
+          await dockerCall('DELETE', `/containers/${encodeURIComponent(st.id)}?force=1`).catch(() => {});
+        }
+        try { return await startGoAccessContainer(key, source.path, { ...opts, force: true }); }
+        catch (e) { throw e instanceof Error ? e : new Error((e && e.error) || 'goaccess start failed'); }
+      },
+    };
+  },
+  async list() {
+    const r = await dockerCall('GET', '/containers/json?all=1&filters=' + encodeURIComponent(JSON.stringify({ name: [GOACCESS_CONTAINER_PREFIX] })));
+    if (r.status !== 200 || !Array.isArray(r.body)) return [];
+    const names = new Set(r.body.flatMap((c) => (c.Names || []).map((n) => n.replace(/^\//, ''))));
+    return listGoAccessSources().filter((s) => names.has(goAccessContainerName(s.id))).map((s) => s.id);
+  },
+});
+
 module.exports = {
   register, handleUpgrade,
   getGoaccessCfg,
   goAccessConfigured, goAccessContainerName, detectLogFormat, ensureGoAccessConf,
-  pullGoAccessImage, listGoAccessSources, getGoAccessContainerStatus,
+  pullGoAccessImage, checkGoAccessImage, ensureGoAccessImage, listGoAccessSources, getGoAccessContainerStatus,
   startGoAccessContainer, stopGoAccessContainer, restartGoAccessContainer,
   readGoAccessReport, resolveGoAccessProxy, clearGoAccessProxyCache,
   proxyGoAccessHttp, proxyGoAccessWS, buildWsOverrideScript,

@@ -100,5 +100,59 @@ check('ENV > genere ; stable entre appels ; jamais vide', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+console.log('\nshipper_url (journal centralise)');
+check('absent : aucune variable SHIPPER_* dans le conteneur (comportement historique)', () => {
+  const { config } = WC.normalizeWafConfig(FULL, ENV);
+  assert.strictEqual(config.shipperUrl, '');
+  const spec = WC.buildContainerSpec(config, { token: 'tok', network: 'n', shipperToken: 'S'.repeat(48) });
+  assert.ok(!spec.Env.some(e => e.startsWith('SHIPPER_')));
+});
+check('defini : SHIPPER_URL et SHIPPER_TOKEN transmis', () => {
+  const { config, errors } = WC.normalizeWafConfig(FULL + 'shipper_url: http://ngx-shipper:9181/\n', ENV);
+  assert.deepStrictEqual(errors, []);
+  assert.strictEqual(config.shipperUrl, 'http://ngx-shipper:9181');
+  const spec = WC.buildContainerSpec(config, { token: 'tok', network: 'n', shipperToken: 'S'.repeat(48) });
+  assert.ok(spec.Env.includes('SHIPPER_URL=http://ngx-shipper:9181'));
+  assert.ok(spec.Env.includes('SHIPPER_TOKEN=' + 'S'.repeat(48)));
+});
+check('defini mais sans jeton : rien n est transmis (jamais d URL seule)', () => {
+  const { config } = WC.normalizeWafConfig(FULL + 'shipper_url: http://ngx-shipper:9181\n', ENV);
+  const spec = WC.buildContainerSpec(config, { token: 'tok', network: 'n' });
+  assert.ok(!spec.Env.some(e => e.startsWith('SHIPPER_')));
+});
+check('URL acceptees : service Docker, boucle locale, IP privee, https public', () => {
+  for (const u of ['http://ngx-shipper:9181', 'http://127.0.0.1:9181', 'http://localhost:9181', 'http://10.1.2.3:9181', 'http://172.20.0.5:9181', 'http://192.168.1.5:9181', 'https://ship.example.com', 'http://[::1]:9181'])
+    assert.ok(WC.validShipperUrl(u), u);
+});
+check('URL refusees : http public, chemin, identifiants, schema, requete', () => {
+  for (const u of ['http://example.com:9181', 'http://8.8.8.8:9181', 'http://172.32.0.1:9181', 'http://ngx-shipper:9181/x', 'http://u:p@ngx-shipper:9181', 'ftp://ngx-shipper', 'http://ngx-shipper:9181/?a=1', 'ngx-shipper:9181', '', 'http://' + 'a'.repeat(300)])
+    assert.ok(!WC.validShipperUrl(u), u);
+});
+check('URL invalide : erreur explicite et blocker invalid, aucune URL retenue', () => {
+  const r = WC.normalizeWafConfig(FULL + 'shipper_url: http://example.com:9181\n', ENV);
+  assert.strictEqual(r.config.shipperUrl, '');
+  assert.ok(r.errors.some(e => e.startsWith('shipper_url')));
+  assert.ok(r.blockers.includes('invalid'));
+});
+check('jeton local : ENV (>= 24) > genere et conserve ; ENV trop court ignore', () => {
+  const os = require('os'), fs = require('fs'), path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shiptok-'));
+  process.env.USERS_FILE = path.join(dir, 'users.yml'); delete process.env.SHIPPER_LOCAL_TOKEN;
+  const reload = () => { for (const m of ['../lib/config', '../lib/shipper-token']) delete require.cache[require.resolve(m)]; return require('../lib/shipper-token').getShipperToken; };
+  let get = reload();
+  const a = get();
+  assert.ok(/^[a-f0-9]{48}$/.test(a));
+  assert.strictEqual(get(), a);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, '.generated-secrets.json'), 'utf8')).shipperToken, a);
+  process.env.SHIPPER_LOCAL_TOKEN = 'from-env-token-0123456789-abcdef';
+  get = reload();
+  assert.strictEqual(get(), 'from-env-token-0123456789-abcdef');
+  process.env.SHIPPER_LOCAL_TOKEN = 'trop-court';
+  get = reload();
+  assert.strictEqual(get(), a);
+  delete process.env.SHIPPER_LOCAL_TOKEN;
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 console.log(`\n${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

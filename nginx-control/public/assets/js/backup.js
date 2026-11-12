@@ -6,6 +6,7 @@
  * Git est configuré (voir README.md, "Git configuré = source de vérité").
  */
 async function loadBackupsPage() {
+  loadBackupS3Card(); // #117 : carte « Destination S3 » (indépendante de la liste locale)
   const el = document.getElementById('bkp-list');
   el.innerHTML = '<div style="color:var(--text3);font-family:monospace;font-size:12px">Chargement…</div>';
   const d = await api('/backups').catch(() => null);
@@ -81,6 +82,12 @@ function backupChoiceDialog() {
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="15" height="15"><path d="M2 12V5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7"/><path d="M1 12h14v1a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-1z"/><circle cx="11" cy="4" r="2"/><path d="M7 4h2"/></svg>
             <div style="text-align:left"><div style="font-weight:600">Local + Git</div><div style="font-size:11px;color:var(--text3);font-family:monospace">ZIP + push branche backup + tag</div></div>
           </button>
+          <button id="bkp-opt-s3" onclick="bkpPick('s3')" class="btn" style="justify-content:flex-start;gap:10px;padding:10px 14px">
+            <div style="text-align:left"><div style="font-weight:600">S3 uniquement</div><div style="font-size:11px;color:var(--text3);font-family:monospace">ZIP envoyé vers le bucket (config/backup.yml)</div></div>
+          </button>
+          <button id="bkp-opt-all" onclick="bkpPick('all')" class="btn" style="justify-content:flex-start;gap:10px;padding:10px 14px">
+            <div style="text-align:left"><div style="font-weight:600">Local + Git + S3</div><div style="font-size:11px;color:var(--text3);font-family:monospace">Toutes les destinations configurées</div></div>
+          </button>
         </div>
         <button onclick="bkpCancel()" style="width:100%;background:none;border:1px solid var(--border);border-radius:6px;color:var(--text3);padding:7px;cursor:pointer;font-family:monospace;font-size:12px">Annuler</button>
       </div>`;
@@ -131,6 +138,9 @@ async function doManualBackup() {
     if (d.git?.ok) parts.push('Git tag: ' + d.git.tag);
     else if (d.git?.error) parts.push('Git erreur: ' + d.git.error);
     else if (d.git?.skipped) parts.push('Git: ignore (' + d.git.reason + ')');
+    if (d.s3?.ok) parts.push('S3: ' + d.s3.key + (d.s3.ngxops?.key ? ' (+ YAML)' : ''));
+    else if (d.s3?.error) parts.push('S3 erreur: ' + d.s3.error);
+    else if (d.s3?.skipped && d.mode !== 'local' && d.mode !== 'git' && d.mode !== 'both') parts.push('S3: ignoré (' + d.s3.reason + ')');
     alert('Sauvegarde OK\n' + parts.join('\n'));
   } else {
     alert('Erreur : ' + (d?.error || 'Inconnue'));
@@ -157,3 +167,42 @@ async function deleteBackup(name) {
   await api('/backups/' + encodeURIComponent(name), { method: 'DELETE' });
   await loadBackupsPage();
 }
+
+/**
+ * Carte « Destination S3 » (#117). Contenu issu du bucket = non fiable : tout est posé via textContent (jamais innerHTML).
+ */
+async function loadBackupS3Card() {
+  const el = document.getElementById('bkp-s3');
+  if (!el) return;
+  const line = (txt, color) => { const d = document.createElement('div'); d.textContent = txt; d.style.cssText = 'font-family:monospace;font-size:12px;color:' + (color || 'var(--text3)'); return d; };
+  el.replaceChildren(line('Chargement…'));
+  const d = await api('/backups/s3').catch(() => null);
+  if (!d) { el.replaceChildren(line('Erreur API', 'var(--red)')); return; }
+  const rows = [];
+  if (!d.enabled) rows.push(line('Désactivée — renseigner la page Configuration → « Sauvegardes (S3, cibles automatiques) » (s3_enable, s3_endpoint, s3_bucket + clés).'));
+  else if (!d.configured) rows.push(line('Incomplète — champs manquants : ' + d.missing.join(', '), 'var(--amber)'));
+  else {
+    rows.push(line(`${d.endpoint} · bucket ${d.bucket} · préfixe « ${d.prefix} » · rotation ${d.keep || 'aucune'} · YAML NGX Ops : ${d.ngxops ? 'oui' : 'non'}`));
+    const test = document.createElement('button'); test.className = 'btn sm'; test.textContent = 'Tester la connexion';
+    test.onclick = async () => {
+      test.disabled = true;
+      const r = await api('/backups/s3/test', { method: 'POST', body: '{}' }).catch(e => ({ ok: false, error: e.message }));
+      test.disabled = false; alert(r.ok ? 'Connexion S3 OK' : 'Échec S3 : ' + r.error);
+    };
+    rows.push(test);
+    if (d.error) rows.push(line('Liste impossible : ' + d.error, 'var(--red)'));
+    else if (!d.objects?.length) rows.push(line('Aucun objet sous ce préfixe.'));
+    else for (const o of d.objects) {
+      const r = document.createElement('div'); r.className = 'bkp-row';
+      const n = document.createElement('span'); n.className = 'bkp-name'; n.textContent = o.key.slice(d.prefix.length); n.title = o.key;
+      const s = document.createElement('span'); s.className = 'bkp-size'; s.textContent = fmtB(o.size);
+      const t = document.createElement('span'); t.style.cssText = 'color:var(--text3);font-family:monospace;font-size:10px;min-width:70px;text-align:right'; t.textContent = timeAgo(o.lastModified);
+      r.append(n, s, t); rows.push(r);
+    }
+  }
+  rows.push(line(d.auto?.explicit
+    ? `Sauvegarde automatique (avant édition / déploiement) : local ${d.auto.local ? 'oui' : 'non'} · Git ${d.auto.git ? 'oui' : 'non'} · S3 ${d.auto.s3 ? 'oui' : 'non'}`
+    : 'Sauvegarde automatique : comportement historique (ZIP local ; + Git lors du déploiement Git). Définir auto_local / auto_git / auto_s3 pour le changer.'));
+  el.replaceChildren(...rows);
+}
+

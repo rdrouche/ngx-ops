@@ -124,7 +124,8 @@ function loadNotifConfig() { notifCfg = parseYmlFlat(NOTIF_CONFIG_FILE); return 
 
 function loadSchedConfig() { schedCfg = parseYmlFlat(SCHED_CONFIG_FILE); return schedCfg; }
 
-async function sendMail(to, subject, body, cfgOverride) {
+async function sendMail(to, subject, body, cfgOverride, extra) {
+  // extra.html (v12.75.0) : version HTML → mail multipart/alternative.
   // cfgOverride : configuration SMTP explicite (test depuis le formulaire,
   // sans l'enregistrer) ; sinon fichier smtp.yml.
   const cfg = cfgOverride || smtpCfg || loadSmtpConfig();
@@ -206,6 +207,33 @@ async function sendMail(to, subject, body, cfgOverride) {
       // `sendLine()`, so none of the header lines (fixed, never user-controlled
       // free text) need stuffing, only the body's.
       const bodyLines = String(body ?? '').split(/\r\n|\r|\n/).map(dotStuff);
+      if (extra && typeof extra.html === 'string' && extra.html) {
+        // multipart/alternative, chaque partie en base64 (lignes de 76 car.) :
+        // aucun risque de dot-stuffing ni de fin de ligne ambiguë.
+        const b64 = (t) => Buffer.from(String(t), 'utf8').toString('base64').replace(/.{1,76}/g, '$&\r\n').split('\r\n').filter(Boolean);
+        const boundary = '=_ngx_' + require('crypto').randomBytes(12).toString('hex');
+        return [
+          `From: ${stripCrlf(fromName)} <${stripCrlf(from)}>`,
+          `To: ${toHeader}`,
+          `Subject: ${encodeHeaderValue(subject)}`,
+          `Date: ${date}`,
+          `MIME-Version: 1.0`,
+          `Content-Type: multipart/alternative; boundary="${boundary}"`,
+          ``,
+          `--${boundary}`,
+          `Content-Type: text/plain; charset=utf-8`,
+          `Content-Transfer-Encoding: base64`,
+          ``,
+          ...b64(body),
+          `--${boundary}`,
+          `Content-Type: text/html; charset=utf-8`,
+          `Content-Transfer-Encoding: base64`,
+          ``,
+          ...b64(extra.html),
+          `--${boundary}--`,
+          `.`,
+        ];
+      }
       const msgLines = [
         `From: ${stripCrlf(fromName)} <${stripCrlf(from)}>`,
         `To: ${toHeader}`,

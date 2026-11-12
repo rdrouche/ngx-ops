@@ -9,7 +9,7 @@ import (
 // v12.74.0 - maintenance SQLite : recuperer l'espace libere par les purges.
 // Un DELETE ne reduit pas le fichier. CompactOnStart() fait un VACUUM quand la
 // part de pages libres depasse les seuils ; Maintain() (periodique) fait un
-// checkpoint WAL + incremental_vacuum. Parite : lib/db-maintenance.js.
+// checkpoint WAL + optimize + incremental_vacuum + quick_check (#100). Parite : lib/db-maintenance.js.
 
 // FreeStats decrit l'occupation de la base.
 type FreeStats struct {
@@ -91,8 +91,13 @@ func (s *Store) Maintain() FreeStats {
 		return FreeStats{}
 	}
 	_, _ = s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+	_, _ = s.db.Exec(`PRAGMA optimize`) // #100 : statistiques du planificateur a jour
 	if s.freeStatsLocked().AutoVacuum == 2 {
 		_, _ = s.db.Exec(`PRAGMA incremental_vacuum(2000)`)
+	}
+	var qc string
+	if err := s.db.QueryRow(`PRAGMA quick_check`).Scan(&qc); err == nil && qc != "ok" {
+		fmt.Printf("[db] analyzer: quick_check en echec : %.200s\n", qc)
 	}
 	return s.freeStatsLocked()
 }

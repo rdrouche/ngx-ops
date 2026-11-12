@@ -205,4 +205,6 @@ const (
 	HeadSigBytes           = 64
 	RawMaxLen              = 16384
 	ReadJSONBodyMaxBytes   = 2000000
+	// BlocklistSourcesMaxBytes : plafond dédié au push des sources de blocklist (v12.77.0) — 200 k IP ≈ 3,5 Mo.
+	BlocklistSourcesMaxBytes = 64000000
 )

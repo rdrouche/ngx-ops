@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
+	"sort"
 	"strings"
 	"time"
 
@@ -51,11 +52,25 @@ func send(w http.ResponseWriter, code int, data any) {
 // readJSONBody reproduit readJsonBody() : au-dela de config.ReadJSONBodyMaxBytes,
 // renvoie {} plutot que de tenter un JSON invalide/tronque.
 func readJSONBody(r *http.Request) map[string]any {
-	limited := io.LimitReader(r.Body, config.ReadJSONBodyMaxBytes+1)
+	m, _ := readJSONBodyMax(r, config.ReadJSONBodyMaxBytes)
+	return m
+}
+
+// readJSONBodyMax : même chose avec un plafond choisi ; le 2e résultat vaut true quand le
+// corps dépasse le plafond (l'appelant peut alors répondre 413 plutôt que d'agir sur {}).
+func readJSONBodyMax(r *http.Request, max int) (map[string]any, bool) {
+	limited := io.LimitReader(r.Body, int64(max)+1)
 	data, err := io.ReadAll(limited)
-	if err != nil || len(data) > config.ReadJSONBodyMaxBytes {
-		return map[string]any{}
+	if err == nil && len(data) > max {
+		return map[string]any{}, true
 	}
+	if err != nil {
+		return map[string]any{}, false
+	}
+	return parseJSONObject(data), false
+}
+
+func parseJSONObject(data []byte) map[string]any {
 	if len(data) == 0 {
 		return map[string]any{}
 	}
@@ -693,8 +708,26 @@ func NewHandler(a *app.App) http.Handler {
 			send(w, 200, map[string]any{"ok": true, "count": len(m)})
 			return
 
+		case p == "/api/blocklist-sources/lookup" && r.Method == http.MethodGet: // #110 : le shipper attribue un nom de liste aux hits du journal
+			ip := q.Get("ip")
+			if ip == "" || len(ip) > 64 || cidr.ToBytes(ip) == nil {
+				send(w, 400, map[string]any{"error": "ip required"})
+				return
+			}
+			names := blocklistsources.SourcesContaining(ip)
+			sort.Strings(names)
+			if names == nil {
+				names = []string{}
+			}
+			send(w, 200, map[string]any{"sources": names, "synced": blocklistsources.HasSources()})
+			return
+
 		case p == "/api/blocklist-sources" && r.Method == http.MethodPost:
-			body := readJSONBody(r)
+			body, tooLarge := readJSONBodyMax(r, config.BlocklistSourcesMaxBytes)
+			if tooLarge { // l'état en place est conservé
+				send(w, 413, map[string]any{"error": "payload too large", "maxBytes": config.BlocklistSourcesMaxBytes})
+				return
+			}
 			mode, _ := body["mode"].(string)
 			blocklistsources.SetMode(mode)
 			sourcesRaw, _ := body["sources"].(map[string]any)
@@ -712,7 +745,11 @@ func NewHandler(a *app.App) http.Handler {
 				sources[name] = blocklistsources.Source{IPs: ips}
 			}
 			blocklistsources.SetSources(sources)
-			send(w, 200, map[string]any{"ok": true, "mode": blocklistsources.GetMode()})
+			totalIPs := 0
+			for _, sv := range sources {
+				totalIPs += len(sv.IPs)
+			}
+			send(w, 200, map[string]any{"ok": true, "mode": blocklistsources.GetMode(), "sources": len(sources), "ips": totalIPs})
 			return
 
 		case p == "/api/baseline":
@@ -792,7 +829,8 @@ func NewHandler(a *app.App) http.Handler {
 			summary := a.Store.BlocklistHitsSummary(from, to, limit)
 			bySourceCounts := map[string]int{}
 			var order []string
-			for _, t := range summary.TopIPs {
+			// v12.77.0 : attribution sur toutes les IP touchées (≤ 50 000), pas seulement le top demandé.
+			for _, t := range a.Store.BlocklistHitsSummary(from, to, 50000).TopIPs {
 				for _, name := range blocklistsources.SourcesContaining(t.IP) {
 					if _, ok := bySourceCounts[name]; !ok {
 						order = append(order, name)

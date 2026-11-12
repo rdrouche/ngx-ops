@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"nginx-challenge/internal/challenge"
+	"nginx-challenge/internal/decisions"
 )
 
 func main() {
@@ -24,6 +25,32 @@ func main() {
 	srv, err := challenge.New(cfg)
 	if err != nil {
 		log.Fatal(err)
+	}
+	// Decisions vers le log store, via l'API locale du shipper (NC_SHIPPER_URL vide = desactive).
+	decCtx, decStop := context.WithCancel(context.Background())
+	decDone := make(chan struct{})
+	dec, derr := decisions.New(decisions.Config{URL: cfg.ShipperURL, Token: cfg.ShipperToken})
+	if derr != nil {
+		log.Printf("envoi des décisions désactivé : %v", derr)
+	}
+	if dec != nil {
+		srv.SetEmitter(dec)
+		go func() { dec.Run(decCtx); close(decDone) }()
+		log.Printf("décisions envoyées au shipper local")
+	} else {
+		close(decDone)
+	}
+	var pers *challenge.Persister
+	if cfg.RedisURL != "" {
+		pers, err = challenge.NewPersister(cfg.RedisURL, cfg.RedisPassword, cfg.RedisPrefix, srv)
+		if err != nil {
+			log.Fatalf("NC_REDIS_URL : %v", err)
+		}
+		if rerr := pers.Restore(); rerr != nil {
+			log.Printf("Redis %s injoignable (%v) — démarrage sans persistance, nouvelle tentative à chaque sauvegarde", pers.Addr(), rerr)
+		} else {
+			log.Printf("Redis %s : état restauré %v", pers.Addr(), pers.Restored)
+		}
 	}
 	hs := &http.Server{
 		Addr: cfg.Bind, Handler: srv.Handler(),
@@ -39,6 +66,13 @@ func main() {
 	flushStop := make(chan struct{})
 	flushDone := make(chan struct{})
 	go func() { srv.Stats().RunFlusher(flushStop, time.Minute); close(flushDone) }()
+	persStop := make(chan struct{})
+	persDone := make(chan struct{})
+	if pers != nil {
+		go func() { pers.Run(persStop); close(persDone) }()
+	} else {
+		close(persDone)
+	}
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
@@ -47,4 +81,8 @@ func main() {
 	_ = hs.Shutdown(ctx)
 	close(flushStop)
 	<-flushDone
+	close(persStop)
+	<-persDone
+	decStop() // après l'arrêt du serveur : les dernières décisions sont déjà en file
+	<-decDone
 }

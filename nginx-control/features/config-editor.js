@@ -38,6 +38,8 @@ const { send, parseBody } = httpLib;
 const { maskSecretsInConfig, unmaskSecrets } = secrets;
 const { logEvent } = events;
 const { challengeOverridesFromText } = require('../lib/challenge-settings');
+const hubSettings = require('../lib/hub-settings');
+const backupSettings = require('../lib/backup-settings');
 
 const FILES = [
   { key: 'certbot',      label: 'Certbot — défi HTTP',   file: cfg.CERTBOT_CONFIG_FILE },
@@ -52,9 +54,12 @@ const FILES = [
   { key: 'challenge',    label: 'Challenge HTTP',         file: cfg.CHALLENGE_CONFIG_FILE },
   { key: 'intelligence', label: 'NGX Ops Intelligence', file: cfg.INTELLIGENCE_CONFIG_FILE },
   { key: 'waf',          label: 'WAF émulé',              file: cfg.WAF_CONFIG_FILE },
+  { key: 'logstore',     label: 'Journal centralisé (log store)', file: cfg.LOGSTORE_CONFIG_FILE },
   { key: 'blocklists',   label: 'Blocklists IP',          file: cfg.BLOCKLIST_CONFIG_FILE },
   { key: 'deploy-tokens', label: 'Jetons de déploiement (CI/CD)', file: cfg.DEPLOY_TOKENS_FILE },
   { key: 'docker-autoconfig', label: 'Auto-config Docker (labels)', file: cfg.DOCKER_AUTOCONFIG_CONFIG_FILE },
+  { key: 'hub', label: 'NGX Ops Hub (sauvegarde, exposition)', file: hubSettings.FILE },
+  { key: 'backup', label: 'Sauvegardes (S3, cibles automatiques)', file: backupSettings.FILE },
   { key: 'agents', label: 'Hôtes Docker distants (agents)', file: cfg.AGENTS_CONFIG_FILE },
 ];
 

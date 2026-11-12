@@ -1,3 +1,3 @@
 module nginx-challenge
 
-go 1.24.7
+go 1.27

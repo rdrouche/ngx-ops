@@ -1,0 +1,24 @@
+# Banc de charge jetable (#60) : log store + TimescaleDB, limites de débit relevées.
+# Usage : ./run.sh   puis   docker compose -p lsbench -f docker-compose.bench.yml down -v
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment: { POSTGRES_DB: logstore, POSTGRES_USER: logstore, POSTGRES_PASSWORD: benchpass }
+    volumes: [ "benchdb:/var/lib/postgresql/data" ]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U logstore -d logstore"], interval: 3s, retries: 20 }
+  logstore:
+    build: { context: .., args: { VERSION: bench } }
+    restart: on-failure
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      LOGSTORE_DATABASE_URL: postgres://logstore:benchpass@db:5432/logstore?sslmode=disable
+      LOGSTORE_ADMIN_TOKEN: bench-admin-token-0123456789abcdef0123456789abcdef
+      LOGSTORE_INSECURE_HTTP: "true"
+      LOGSTORE_REQUIRE_TIMESCALE: "true"
+      LOGSTORE_RETENTION_DAYS: "30"
+      LOGSTORE_RATE_WRITE: "1000"
+      LOGSTORE_RATE_READ: "1000"
+      LOGSTORE_MAX_BATCH_EVENTS: "5000"
+    ports: [ "127.0.0.1:18443:8443" ]
+volumes:
+  benchdb:

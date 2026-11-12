@@ -10,6 +10,7 @@
  */
 const crypto = require('crypto');
 const { SEVERITY_RANK } = require('./intel-settings');
+const { ipInCidr } = require('./cidr');
 
 const SCHEMA = 1;
 const BUILTIN_RULES = new Set(['bruteforce', 'scan', 'flood', 'scraping', 'volumetric', 'country_traffic', 'data_volume']);
@@ -33,6 +34,12 @@ function ruleOf(a) {
 
 /** Faut-il envoyer cette alerte ? (règle exclue/non incluse, sévérité trop basse) */
 function shouldSend(a, s) {
+  // v12.75.0 : IP exclues (exclude_ips) — l'alerte n'est jamais envoyee, quelle que soit la regle.
+  if (s.excludeIps && s.excludeIps.length) {
+    const ev = a.evidence || {};
+    const ips = [a.ip, ev.ip].filter(Boolean);
+    if (ips.some(ip => s.excludeIps.some(p => ipInCidr(ip, p)))) return false;
+  }
   const r = ruleOf(a);
   const names = [r.key, r.name, String(a.type || '')];
   if (names.some(n => s.excludeRules.includes(n))) return false;
@@ -53,7 +60,7 @@ function shapeAlert(a, s) {
     ip: campaign ? null : (a.ip || ev.ip || null),
   };
   if (campaign && Array.isArray(ev.ips)) {
-    out.ips = ev.ips.slice(0, MAX_CAMPAIGN_IPS).map(x => [str(x[0], 45), Number(x[1]) || 0]);
+    out.ips = ev.ips.filter(x => !(s.excludeIps || []).some(p => ipInCidr(String(x[0]), p))).slice(0, MAX_CAMPAIGN_IPS).map(x => [str(x[0], 45), Number(x[1]) || 0]);
   }
   const num = (k, v) => { if (Number.isFinite(+v) && v != null) out[k] = +v; };
   num('window_minutes', ev.windowMinutes);
@@ -192,6 +199,7 @@ function initialState() {
     cursor: null, failures: 0, nextAttemptAt: 0, lastRunAt: 0, lastSuccessAt: 0,
     lastError: null, lastHttpStatus: null, authError: false, authConfigHash: null,
     batchLimit: null, pending: false,
+    rejectReasons: {}, // motif -> nombre (borné), pour comprendre les rejets du serveur (#83)
     counters: { batches: 0, sent: 0, accepted: 0, rejected: 0, skipped: 0, dropped: 0, http429: 0, errors: 0 },
   };
 }
@@ -264,6 +272,11 @@ async function runCycle({ settings, state, instance, now = Date.now(), deps, use
       st.counters.sent += chosen.length;
       st.counters.accepted += Number.isFinite(+r.accepted) ? +r.accepted : chosen.length - rejected;
       st.counters.rejected += rejected;
+      if (rejected) {
+        const rr = { ...(st.rejectReasons || {}) };
+        for (const x of r.rejected) { const k = str(x && x.reason, 80) || 'unknown'; if (k in rr || Object.keys(rr).length < 20) rr[k] = (rr[k] || 0) + 1; }
+        st.rejectReasons = rr;
+      }
       st.counters.skipped += raw.length - chosen.length;
       st.failures = 0; st.lastError = null; st.lastSuccessAt = now; st.nextAttemptAt = 0;
       st.pending = raw.length >= limit; // il reste probablement des alertes : on enchaîne sans attendre l'intervalle

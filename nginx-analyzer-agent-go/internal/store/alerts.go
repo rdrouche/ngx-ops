@@ -2,8 +2,27 @@ package store
 
 import "encoding/json"
 
+// SetAlertHook enregistre un rappel appelé après chaque alerte créée (hors verrou, #110 : expédition vers le log store).
+// Le rappel doit être rapide et ne jamais bloquer.
+func (s *Store) SetAlertHook(fn func(Alert)) {
+	s.mu.Lock()
+	s.onAlert = fn
+	s.mu.Unlock()
+}
+
 // AddAlert replique addAlert().
 func (s *Store) AddAlert(a AlertInput) Alert {
+	row := s.addAlert(a)
+	s.mu.Lock()
+	fn := s.onAlert
+	s.mu.Unlock()
+	if fn != nil {
+		fn(row)
+	}
+	return row
+}
+
+func (s *Store) addAlert(a AlertInput) Alert {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ts := nowMs()

@@ -27,6 +27,15 @@ function register(router) {
     return send(res, 200, { digests: events.listDigests(limit) });
   });
 
+  /** Aperçu du mail HTML d'un digest (id ou dernier) — v12.75.0. */
+  router.get('/api/digest/html', async ({ res, session, url }) => {
+    if (!hasPerm(session, PERMS.VIEW_METRICS)) return httpLib.forbidden(res);
+    const id = +url.searchParams.get('id');
+    const d = id ? events.getDigest(id) : events.getLatestDigest();
+    if (!d) return httpLib.notFound(res, 'digest not found');
+    return send(res, 200, digest.formatDigestHtml(d), 'text/html');
+  });
+
   router.addPrefix('GET', '/api/digest/', async ({ res, session, url }) => {
     if (!hasPerm(session, PERMS.VIEW_METRICS)) return httpLib.forbidden(res);
     // /api/digest/latest and /api/digest/history are registered as exact

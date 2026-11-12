@@ -351,3 +351,28 @@ func vhostsAsEntries(vhosts []VhostSpec, publish []string) []vhostEntry {
 	}
 	return out
 }
+
+func TestVhostFromLabels_NewPrefixAlias(t *testing.T) {
+	spec, _, ok := vhostFromLabels(map[string]string{
+		"ngx-ops.enable":                  "true",
+		"ngx-ops.vhost.server_name":       "new.example.com",
+		"ngx-ops.vhost.location01":        "/",
+		"ngx-ops.vhost.location01.target": "http://203.0.113.10:8080",
+		"nginx-control.vhost.listen":      "8443",
+	})
+	if !ok || spec == nil {
+		t.Fatal("ngx-ops.enable=true doit activer le conteneur")
+	}
+	if spec.ServerName != "new.example.com" || spec.Listen != 8443 {
+		t.Fatalf("mélange des deux préfixes : %+v", spec)
+	}
+	// les deux préfixes pour la même clé : ngx-ops. l'emporte
+	spec, _, _ = vhostFromLabels(map[string]string{
+		"nginx-control.enable": "true", "nginx-control.vhost.server_name": "old.example.com",
+		"ngx-ops.vhost.server_name":      "new.example.com",
+		"nginx-control.vhost.location01": "/", "nginx-control.vhost.location01.target": "http://203.0.113.10:8080",
+	})
+	if spec == nil || spec.ServerName != "new.example.com" {
+		t.Fatalf("ngx-ops. doit l'emporter : %+v", spec)
+	}
+}

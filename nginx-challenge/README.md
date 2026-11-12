@@ -36,6 +36,9 @@ CSP stricte sur la page.
 | `NC_RATE_PER_MIN` | `30` | Appels `/api/*` par IP et par minute |
 | `NC_GOODBOTS` | `true` | Autoriser les robots d'indexation vérifiés sur les vhosts « sauf bons robots » |
 | `NC_GOODBOTS_EXTRA` | — | Robots supplémentaires : `nom\|regex-UA\|.suffixe1,.suffixe2;nom2\|…` |
+| `NC_REDIS_URL` | — | Redis **optionnel** (`redis://redis:6379/0`) : statistiques, IP en échec / bloquées et jetons anti-rejeu sont sauvegardés toutes les 15 s et à l'arrêt, puis restaurés au démarrage. Vide = comme avant. Redis injoignable = le challenge répond normalement, sans persistance. |
+| `NC_REDIS_PASSWORD` | — | Mot de passe Redis (jamais dans l'URL ni les journaux). |
+| `NC_REDIS_PREFIX` | `ngx` | Préfixe des clés (`<préfixe>:challenge:stats\|offenders\|used`, expiration 7 jours). |
 | `NC_AUTOBLOCK` | `false` | Bloquer automatiquement les IP qui échouent systématiquement (voir ci-dessous) |
 | `NC_AUTOBLOCK_THRESHOLD` | `30` | Échecs déclenchant le blocage (3–100000) |
 | `NC_AUTOBLOCK_WINDOW_MIN` | `60` | Fenêtre de comptage des échecs, en minutes (1–1440) |
@@ -78,3 +81,7 @@ l'historique des déclenchements), `GET /blocklist` (texte, une IP par ligne), `
 ```
 go vet ./... && go test -race ./...
 ```
+
+## Journal centralisé (log store, facultatif)
+
+Avec `NC_SHIPPER_URL` (API **locale** du shipper, ex. `http://ngx-shipper:9181`) et `NC_SHIPPER_TOKEN` (jeton local, 24 caractères minimum), le challenge envoie ses **décisions** au log store, via le shipper : `source=challenge`, et `rule` ∈ `solved` (action `allowed`), `failed` (`challenged`, `extra.reason` = `expired_or_invalid` / `wrong_solution` / `reused`), `rate_limited` (`blocked`, `extra.stage` = `start` / `verify`), `auto_ban` (`blocked`, une fois par blocage ; `extra` = tentatives, fenêtre, échéance, compteurs), `redirected` (`challenged`, au plus une fois par minute et par IP/site). Les requêtes laissées passer par cookie ou par robot vérifié ne sont **pas** envoyées (elles figurent dans le journal d'accès) ; pas de chemin (le sous-appel `auth_request` ne le transmet pas). Envoi non bloquant : file bornée, deux essais puis abandon compté ; un shipper arrêté fait perdre les décisions émises pendant ce temps. Sans `NC_SHIPPER_URL`, aucun changement. `http://` n'est admis que vers une boucle locale, un nom de service Docker ou une IP privée. Géré par le dashboard : `shipper_url` dans `config/challenge.yml` (moteur builtin).

@@ -77,9 +77,8 @@ async function selectGoAccessSource(sourceId, vhost, running) {
       <span class="ga-viewer-title">${h(vhost)}</span>
       <span class="badge ${running?'gn':'gy'}">${running?'En cours':'Arrete'}</span>
       ${running
-        ? `<button class="btn sm danger" onclick="gaStop('${sourceId}')"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="11" height="11"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>Arreter</button>
-           <button class="btn sm" onclick="gaRestart('${sourceId}')" title="Restart sans perte de donnees">&#8635; Restart</button>
-             <button class="btn sm" onclick="gaRecreate('${sourceId}')" title="Stop + Recreer avec options">&#9881; Recreer</button>`
+        ? `<span id="ga-ctl"></span>
+             <button class="btn sm" onclick="gaRecreate('${sourceId}')" title="Recreer avec options (persistance, GeoIP)">&#9881; Options</button>`
         : `<button class="btn sm primary" onclick="gaStartWithOpts('${sourceId}')"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="11" height="11"><path d="M5 3l9 5-9 5V3z" fill="currentColor"/></svg>Demarrer</button>`
       }
       <button class="btn sm" onclick="gaRefresh('${sourceId}')">&#8635; Rapport</button>
@@ -98,6 +97,12 @@ async function selectGoAccessSource(sourceId, vhost, running) {
           </div>`
       }
     </div>`;
+
+  // Controle uniforme du conteneur (#104) : redemarrer, recreer (options conservees), mettre a jour l'image, arreter, supprimer.
+  const ctl = document.getElementById('ga-ctl');
+  if (ctl && typeof ngxContainerControl === 'function') {
+    ngxContainerControl(ctl, 'goaccess:' + sourceId, { onDone: () => setTimeout(() => loadGoAccess(), 1500) });
+  }
 
   // Auto-refresh iframe every 30s
   clearInterval(gaRefreshTimer);

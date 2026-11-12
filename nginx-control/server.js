@@ -22,6 +22,7 @@ const { exec } = require('child_process');
 // ─── Foundation ──────────────────────────────────────────────────────────────
 const cfg     = require('./lib/config');
 const httpLib = require('./lib/http');
+const assetVersion = require('./lib/asset-version');
 const auth    = require('./lib/auth');
 const docker  = require('./lib/docker');
 const tree    = require('./lib/fs-tree');
@@ -33,6 +34,7 @@ const pageRoutes = require('./lib/page-routes');
 // Wire the pieces that must not import each other directly: auth emits login
 // events, but events must not depend on auth for permissions.
 auth.setEventLogger(events.logEvent);
+require('./features/mfa').setEventLogger(events.logEvent);
 
 // ─── Names used throughout the (still inline) feature code ───────────────────
 // Re-exported locally so the code below reads unchanged during the migration.
@@ -98,7 +100,7 @@ const { gitBackupPush, runCmd, getGitCfg } = require('./lib/git');
 const { getCrowdsecCfg } = require('./lib/crowdsec-cfg');
 const { getGoaccessCfg } = goaccessFeature;
 const { listGoAccessSources, getGoAccessContainerStatus, restartGoAccessContainer,
-        pullGoAccessImage } = goaccessFeature;
+        pullGoAccessImage, checkGoAccessImage } = goaccessFeature;
 const { sendMail, sendNotification, loadSmtpConfig, loadNotifConfig, loadSchedConfig } = notify;
 const { listSSLSnippets, listSnippetsWithMeta } = require('./lib/snippets');
 
@@ -113,6 +115,8 @@ const { eventLog, webhooks, logEvent, queryEvents, clearEvents, recentEvents,
 
 // ─── Static assets (public/assets — extracted pieces of index.html) ──────────
 const STATIC_ASSETS_DIR = path.join(__dirname, 'public', 'assets');
+// Empreinte des fichiers statiques (calculee une fois au demarrage) : ?v=... dans le HTML, contre les caches obsoletes.
+const ASSETS_VERSION = assetVersion.computeVersion([STATIC_ASSETS_DIR, path.join(__dirname, 'public', 'index.html')]);
 // .woff2 added in v12.30.0 alongside assets/fonts/ and assets/vendor/ — the
 // dashboard now self-hosts its font files and Chart.js instead of loading
 // them from fonts.googleapis.com/fonts.gstatic.com/cdn.jsdelivr.net (see
@@ -304,6 +308,8 @@ const FEATURES = [
   require('./features/digest'),
   require('./features/scheduler'),
   require('./features/config-editor'),
+  require('./features/config-forms'),
+  require('./features/container-actions'),
   require('./features/backends'),
   require('./features/audit'),
   require('./features/monitor'),
@@ -318,6 +324,11 @@ const FEATURES = [
   require('./features/containers'),
   require('./features/intelligence'),
   require('./features/waf'),
+  require('./features/logstore'),
+  require('./features/mfa'),
+  require('./features/hub'),
+  require('./features/redis'),
+  require('./features/health'),
 ];
 for (const f of FEATURES) f.register(router);
 
@@ -382,6 +393,7 @@ const scheduler = require('./lib/scheduler');
 scheduler.setTasks({
   createBackupZip:            require('./lib/backup').createBackupZip,
   gitBackupPush:              require('./lib/git').gitBackupPush,
+  s3BackupPush:               require('./lib/backup-targets').s3BackupPush,
   restartAnalyzer:            analyzerFeature.restartAnalyzer,
   runCertsync:                require('./features/certsync').runSync,
   listCertsyncRemotes:        require('./features/certsync').listRemotesForScheduler,
@@ -406,6 +418,10 @@ require('./lib/digest').configure({
   crowdsecConfigured:   require('./features/crowdsec').crowdsecConfigured,
   getBlocklistStats:    (opts) => blocklistsFeature.getDigestStats(opts),
 });
+
+require('./features/hub').setDeps({ fetchVTS, analyzerApi: analyzerFeature.analyzerApi, execNginx: require('./lib/docker').execNginx });
+require('./features/redis').setDeps({ analyzerApi: analyzerFeature.analyzerApi });
+require('./features/health').setDeps({ fetchVTS });
 
 // blocklists.js reads the analyzer's blocklist-hits window summary
 // (getHitStats()) and, since v12.29.0, pushes its own per-source IP/CIDR
@@ -553,6 +569,12 @@ async function handleRequest(req, res) {
 
   if (req.method === 'OPTIONS') return send(res, 204, '');
 
+  // v12.75.0 : URL publique (sans API) des listes de blocage — desactivee par defaut (blocklists.yml: public_enable).
+  if (pathname.startsWith('/public/') && require('./features/public-blocklist').maybeHandle(req, res, pathname, reqClientIp)) return;
+
+  // #74 : etat de sante public minimal (HEALTH_PUBLIC=false pour le couper).
+  if (pathname === '/health' && await require('./features/health').maybeHandle(req, res, pathname)) return;
+
   // ── Static assets (CSS/JS split out of the single index.html) ─────────────
   // Public, unauthenticated — same as any other static asset a browser
   // fetches before it even has a session cookie. No user data, no secrets,
@@ -569,13 +591,19 @@ async function handleRequest(req, res) {
       return send(res, 404, { error: 'Not found' });
     }
     try {
-      return send(res, 200, fs.readFileSync(filePath), ct, { 'Cache-Control': 'no-cache' });
+      const buf = fs.readFileSync(filePath);
+      const etag = assetVersion.etagOf(buf);
+      // no-cache = revalidation a chaque fois ; 304 si inchange (pas de retelechargement), jamais de version perimee.
+      if (assetVersion.notModified(req.headers['if-none-match'], etag)) return send(res, 304, '', ct, { 'Cache-Control': 'no-cache', ETag: etag });
+      return send(res, 200, buf, ct, { 'Cache-Control': 'no-cache', ETag: etag });
     } catch {
       return send(res, 404, { error: 'Not found' });
     }
   }
 
   // ── Auth routes (public, no session required) ─────────────────────────────
+  if (pathname.startsWith('/api/hub/v1/') && await require('./features/hub').maybeHandle(req, res, pathname, reqClientIp)) return;
+  if (pathname.startsWith('/auth/mfa') && await require('./features/mfa').maybeHandle(req, res, pathname, reqClientIp)) return;
   if (pathname === '/auth/login') {
     if (req.method === 'GET') { const lc=parseCookies(req);const ql=lc.ngx_lang||'en';return send(res, 200, loginPage('',ql), 'text/html'); }
     if (req.method === 'POST') {
@@ -618,6 +646,10 @@ async function handleRequest(req, res) {
         clearLoginFailures(reqClientIp, username);
         // Transparently upgrade legacy sha256 digests to scrypt on successful login
         if (needsRehash(user.password)) upgradePasswordHash(user, password);
+        // v12.75.0 — MFA : second facteur (TOTP / clé de sécurité) si le compte en a un.
+        if (require('./features/mfa').isEnabledFor(user.username)) {
+          return require('./features/mfa').startChallenge(req, res, user, reqClientIp);
+        }
         const token = createSession(user, reqClientIp);
         res.writeHead(302, { 'Set-Cookie': setCookieHeader(token, req), 'Location': '/' });
         return res.end();
@@ -676,7 +708,8 @@ async function handleRequest(req, res) {
     // that could drift from DEEP_LINK_PATHS above.
     const brandingScript = `<script>window.BRANDING=${JSON.stringify(BRANDING)};window.DASHBOARD_VERSION=${JSON.stringify(RUNTIME_VERSION !== VERSION ? RUNTIME_VERSION : (process.env.APP_VERSION || RUNTIME_VERSION))};window.UPDATE_CHECK_URL_CONFIGURED=${JSON.stringify(!!(DASHBOARD_VERSION_URL||NGINX_VERSION_URL))};window.NOTIF_POLL_INTERVAL_MS=${JSON.stringify(NOTIF_POLL_INTERVAL_SEC * 1000)};window.PAGE_ROUTES=${JSON.stringify({ slugToPage: pageRoutes.SLUG_TO_PAGE, pageToSlug: pageRoutes.PAGE_TO_SLUG })};</script>`;
     html = httpLib.injectBeforeFirstScript(html, brandingScript, 'branding');
-    return send(res, 200, html, 'text/html');
+    html = assetVersion.versionAssetUrls(html, ASSETS_VERSION);
+    return send(res, 200, html, 'text/html', { 'Cache-Control': 'no-store' });
   }
 
   // ── API routes ────────────────────────────────────────────────────────────
@@ -1229,7 +1262,8 @@ setTimeout(() => { try { scheduler.startScheduler(); } catch(e) { console.warn("
 setTimeout(() => { try { require('./features/monitor').start(); } catch(e) { console.warn("[monitor] Start error:", e.message); } }, 1000);
 startPolling();
 resolveRuntimeVersion().catch(() => {});
-pullGoAccessImage().catch(() => {});
+// v12.78.0 : plus de téléchargement au démarrage (GoAccess n'est tiré qu'à la 1re utilisation).
+checkGoAccessImage().catch(() => {});
 // Pre-resolve container at startup (non-blocking)
 resolveContainer().catch(() => {});
 // Recreate an enabled-but-missing managed container after a host reboot —
@@ -1245,6 +1279,8 @@ ensureErrorPagesContainerAtBoot().catch(() => {});
 ensureChallengeContainerAtBoot().catch(() => {});
 analyzerFeature.ensureContainerAtBoot().catch(() => {});
 wafFeature.ensureContainerAtBoot().catch(() => {});
+require('./features/logstore').ensureContainerAtBoot().catch(() => {});
+setTimeout(() => require('./features/crowdsec-ship').start(), 20000); // #110 : decisions CrowdSec -> shipper -> log store
 server.listen(PORT, () => {
   const imageVersion = process.env.APP_VERSION || VERSION;
   const imageMismatch = imageVersion !== VERSION ? ` (code: ${VERSION})` : '';

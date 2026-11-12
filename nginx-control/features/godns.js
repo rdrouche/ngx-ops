@@ -25,6 +25,7 @@ const cfg     = require('../lib/config');
 const httpLib = require('../lib/http');
 const auth    = require('../lib/auth');
 const docker  = require('../lib/docker');
+const lifecycle = require('../lib/container-lifecycle');
 const secrets = require('../lib/secrets');
 const events  = require('../lib/events');
 const { parseFlatYaml } = require('../lib/simple-yaml');
@@ -418,5 +419,18 @@ function register(router) {
   });
 
 }
+
+// ─── Cycle de vie uniforme (#104) ────────────────────────────────────────────
+lifecycle.register({
+  id: 'godns', label: 'GoDNS', page: 'godns',
+  enabled: () => !!(getGoDNSCfg() || {}).enable,
+  containerName: () => (getGoDNSCfg() || {}).container_name || 'godns',
+  image: () => (getGoDNSCfg() || {}).container_image || 'timothyye/godns:latest',
+  create: async () => {
+    const cfg = getGoDNSCfg();
+    await godnsPullImage(cfg);
+    return godnsStartContainer(cfg);
+  },
+});
 
 module.exports = { register, getGoDNSCfg, loadGoDNSConfig, parseGoDNSLogs, getGoDNSConfigFilePath, detectWebPanelEnabled };

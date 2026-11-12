@@ -131,11 +131,13 @@ function parseZip(data) {
   return entries;
 }
 
-async function createBackupZip(label) {
-  fs.mkdirSync(DIR_BACKUPS, { recursive: true });
+async function createBackupZip(label, opts = {}) {
+  // opts.dir / opts.rotate (#117) : ZIP temporaire pour l'envoi S3, sans toucher aux sauvegardes locales
+  const outDir = opts.dir || DIR_BACKUPS;
+  fs.mkdirSync(outDir, { recursive: true });
   const ts = timestamp();
   const zipName = `${ts}${label ? '_' + label.replace(/[^a-zA-Z0-9-]/g, '') : ''}.zip`;
-  const zipPath = path.join(DIR_BACKUPS, zipName);
+  const zipPath = path.join(outDir, zipName);
 
   // Flat dirs (one level of files)
   const dirs = [
@@ -180,7 +182,7 @@ async function createBackupZip(label) {
   }
 
   writeZip(zipPath, archiveEntries);
-  await rotateBackups();
+  if (opts.rotate !== false) await rotateBackups();
   return { zipPath, zipName, ts, files: archiveEntries.length };
 }
 

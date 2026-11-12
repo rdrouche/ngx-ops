@@ -31,6 +31,15 @@ async function loadBlocklistsPage() {
     return;
   }
 
+  const pubNote = document.getElementById('bl-public-note');
+  if (pubNote) {
+    const p = d.publicList || {};
+    pubNote.style.display = p.enable ? '' : 'none';
+    pubNote.textContent = p.enable
+      ? t(p.tokenSet ? 'blocklists.public.token' : 'blocklists.public.open', { origin: location.origin })
+      : '';
+    pubNote.style.color = p.enable && !p.tokenSet ? 'var(--amber)' : 'var(--text3)';
+  }
   kpiTotal.textContent    = String(d.totalUniqueIps ?? 0);
   kpiEnabled.textContent  = d.enable ? t('blocklists.state.enabled') : t('blocklists.state.disabled');
   kpiEnabled.style.color  = d.enable ? 'var(--green)' : 'var(--text3)';
@@ -239,7 +248,9 @@ async function loadBlocklistHitStats() {
   uniqEl.textContent  = String(d.uniqueHitIps ?? 0);
   bySrcEl.innerHTML = (d.bySource || []).length
     ? d.bySource.map(s => `<div>${h(s.name)} : <strong>${s.hits}</strong></div>`).join('')
-    : `<div style="color:var(--text3)">${h(t('blocklists.hits.none'))}</div>`;
+    : `<div style="color:var(--text3)">${h(d.totalHits > 0 && d.sourcesSync && d.sourcesSync.ok === false
+        ? t('blocklists.hits.nosync', { err: d.sourcesSync.error || '?', n: d.sourcesSync.ips || 0 })
+        : t('blocklists.hits.none'))}</div>`;
   noteEl.textContent = d.hitLogging?.method === 'approx' ? t('blocklists.hits.approxnote') : '';
 }
 

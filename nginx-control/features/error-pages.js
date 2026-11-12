@@ -22,6 +22,7 @@ const cfg     = require('../lib/config');
 const httpLib = require('../lib/http');
 const auth    = require('../lib/auth');
 const docker  = require('../lib/docker');
+const lifecycle = require('../lib/container-lifecycle');
 const events  = require('../lib/events');
 
 const { PERMS, hasPerm } = auth;
@@ -182,20 +183,26 @@ function register(router) {
     const cfg = getErrorPagesCfg();
     if (!cfg?.enable) return httpLib.badRequest(res, 'error-pages is not enabled in error-pages.yml');
     const image = cfg.container_image || 'tarampampam/error-pages:latest';
-    const result = await docker.pullAndCheckUpdate(image);
-    if (!result.ok) return send(res, 200, { ok: false, error: result.error });
-    let recreated = false;
-    if (result.updated) {
-      const status = await containerStatus();
-      if (status.exists) {
-        try { await startContainer(cfg); recreated = true; }
-        catch (e) { return send(res, 200, { ok: true, pulled: true, updated: true, recreated: false, recreateError: e.message }); }
-      }
-    }
-    logEvent('error_pages.image_update', `Image ${image} ${result.updated ? 'updated' : 'already up to date'}${recreated ? ', container recreated' : ''}`, session.username);
-    return send(res, 200, { ok: true, pulled: true, updated: result.updated, recreated });
+    const out = await lifecycle.legacyImageUpdate('error-pages');
+    logEvent('error_pages.image_update', `Image ${image} ${out.updated ? 'updated' : 'already up to date'}${out.recreated ? ', container recreated' : ''}`, session.username);
+    return send(res, 200, out);
   });
 }
+
+// ─── Cycle de vie uniforme (#104) ────────────────────────────────────────────
+lifecycle.register({
+  id: 'error-pages', label: 'Error pages', page: 'error-pages',
+  enabled: () => !!(getErrorPagesCfg() || {}).enable,
+  containerName: () => CONTAINER_NAME,
+  image: () => (getErrorPagesCfg() || {}).container_image || 'tarampampam/error-pages:latest',
+  create: async () => {
+    const cfg = getErrorPagesCfg();
+    const image = cfg.container_image || 'tarampampam/error-pages:latest';
+    const pull = await docker.pullAndCheckUpdate(image);
+    if (!pull.ok) throw new Error(`Pull de l'image ${image} echoue : ${pull.error}`);
+    return startContainer(cfg);
+  },
+});
 
 module.exports = {
   register, getErrorPagesCfg, loadErrorPagesConfig,

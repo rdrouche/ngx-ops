@@ -685,3 +685,8 @@ nav .ni.gs-dim{opacity:.25}
 .ct-mono{font-family:monospace;font-size:11px;word-break:break-all}
 .ct-logout{background:var(--bg);border:1px solid var(--border);border-radius:4px;height:380px;overflow:auto;padding:6px 8px;font-family:monospace;font-size:11px;line-height:1.45;white-space:pre-wrap;word-break:break-all}
 .ct-l.ct-err{color:var(--amber)}
+
+.ip-ext{margin-left:4px;font-size:.85em;text-decoration:none;opacity:.7}.ip-ext:hover{opacity:1}
+
+.ip-link-btn{padding:4px 9px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg3);color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;cursor:pointer}
+.ip-link-btn:hover{color:var(--text)}.ip-link-btn.on{background:var(--bg4);color:var(--accent);border-color:var(--accent)}

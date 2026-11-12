@@ -1,0 +1,101 @@
+/*
+ * Thème « Conductor » (v12.75.0) — refonte graphique d'après les maquettes
+ * clair/sombre : barre supérieure avec menus déroulants groupés, surfaces
+ * arrondies, bleu d'accent. Totalement optionnel : chaque règle est limitée à
+ * html[data-ui="conductor"], donc le thème classique (vert/bleu) reste
+ * strictement inchangé tant que l'utilisateur ne choisit pas Clair/Sombre.
+ * Le logo actuel est conservé. Le choix est mémorisé (localStorage ngx_ui) ;
+ * voir assets/js/ui-theme.js.
+ */
+html[data-ui="conductor"]{
+  /* — clair (défaut du thème) — */
+  --bg:#f4f6f9;--bg1:#ffffff;--bg2:#ffffff;--bg3:#eef1f5;--bg4:#e2e7ee;
+  --border:#dfe4ea;--border2:#cfd6df;--border3:#b9c2ce;
+  --text:#14181f;--text2:#566171;--text3:#69737f;
+  --green:#13783a;--green-dim:#e3f4e8;--green-mid:#b7e2c4;
+  --amber:#9a5b00;--amber-dim:#fff6e5;
+  --red:#c0262d;--red-dim:#fdeaea;
+  --blue:#0a60b8;--blue-dim:#e4f0fc;
+  --purple:#6d4fc2;--purple-dim:#efeafb;
+  --teal:#0f766e;--teal-dim:#dff5f2;
+  --accent:#0b6bcb;--accent-dim:#e4f0fc;--accent-mid:#a9cdf2;
+  --cd-on-accent:#ffffff;--cd-shadow:0 12px 32px rgba(20,24,31,.16);--cd-scrim:rgba(20,24,31,.40);
+  --r:8px;--r2:12px;
+  color-scheme:light;
+}
+html[data-ui="conductor"][data-mode="dark"]{
+  --bg:#0d1117;--bg1:#161b22;--bg2:#161b22;--bg3:#1f2630;--bg4:#2a3340;
+  --border:#2d3541;--border2:#3a4452;--border3:#4a5566;
+  --text:#e6edf3;--text2:#9ba7b6;--text3:#7d8896;
+  --green:#3fb950;--green-dim:rgba(63,185,80,.16);--green-mid:rgba(63,185,80,.4);
+  --amber:#e3b341;--amber-dim:rgba(227,179,65,.14);
+  --red:#ff7b72;--red-dim:rgba(255,123,114,.16);
+  --blue:#6cb2ff;--blue-dim:rgba(108,178,255,.16);
+  --purple:#b69cff;--purple-dim:rgba(182,156,255,.16);
+  --teal:#4fd1c5;--teal-dim:rgba(79,209,197,.16);
+  --accent:#58a6ff;--accent-dim:rgba(88,166,255,.16);--accent-mid:rgba(88,166,255,.42);
+  --cd-on-accent:#0b1320;--cd-shadow:0 12px 32px rgba(0,0,0,.5);--cd-scrim:rgba(1,4,9,.66);
+  color-scheme:dark;
+}
+
+/* — Typo & mise en page : plus de barre latérale, menu en haut — */
+html[data-ui="conductor"],html[data-ui="conductor"] body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+html[data-ui="conductor"] body{grid-template-columns:minmax(0,1fr);grid-template-rows:60px minmax(0,1fr)}
+html[data-ui="conductor"] main{min-width:0}
+html[data-ui="conductor"] nav{display:none}
+html[data-ui="conductor"] header{height:60px;padding:0 24px;gap:12px;background:var(--bg1);border-bottom:1px solid var(--border);position:relative}
+html[data-ui="conductor"] .hsp{display:none}
+html[data-ui="conductor"] header>*{flex-shrink:0}
+html[data-ui="conductor"] header>#cd-bar{flex-shrink:1;overflow:hidden}
+html[data-ui="conductor"] .logo{white-space:nowrap}
+html[data-ui="conductor"] .htime,html[data-ui="conductor"] #nginx-version{display:none}
+html[data-ui="conductor"] .spill{white-space:nowrap}
+html[data-ui="conductor"] .gsearch{width:min(170px,14vw);min-width:110px;margin-left:4px}
+html[data-ui="conductor"] #stxt,html[data-ui="conductor"] .user-info{display:none}
+html[data-ui="conductor"] .logo{font-weight:700;letter-spacing:-.01em}
+html[data-ui="conductor"] .page{width:100%;max-width:1360px;margin:0 auto;padding:28px 24px 48px;gap:24px}
+html[data-ui="conductor"] .card{border-radius:var(--r2);background:var(--bg2);border:1px solid var(--border)}
+html[data-ui="conductor"] .primary{color:var(--cd-on-accent)!important}
+html[data-ui="conductor"] .user-avatar,html[data-ui="conductor"] .uc-avatar{color:var(--cd-on-accent)}
+html[data-ui="conductor"] .format-tab.active{color:var(--cd-on-accent)}
+html[data-ui="conductor"] .hbadge{font-family:inherit;font-size:11px;border-radius:6px}
+html[data-ui="conductor"] .gsearch input{background:var(--bg3);border-radius:8px;height:36px}
+html[data-ui="conductor"] .gsearch input:focus{border-color:var(--accent)}
+html[data-ui="conductor"] .gs-results{box-shadow:var(--cd-shadow);border-radius:12px;background:var(--bg2)}
+html[data-ui="conductor"] .theme-switcher{display:none}   /* l'accent vert/bleu ne s'applique qu'au thème classique */
+
+/* — Barre de menu déroulante (construite par ui-theme.js) — */
+#cd-bar{display:none}
+html[data-ui="conductor"] #cd-bar{display:flex;align-items:center;gap:2px;flex:1 1 auto;min-width:0;margin-left:8px}
+.cd-grp{display:flex;align-items:center;gap:6px;padding:8px 12px;border:0;border-radius:8px;cursor:pointer;font:600 14px/1 inherit;font-family:inherit;color:var(--text);background:transparent;white-space:nowrap}
+.cd-grp:hover,.cd-grp.open{background:var(--bg3)}
+.cd-grp.has-active{color:var(--accent)}
+.cd-grp svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+#cd-menu{position:fixed;z-index:400;min-width:250px;max-height:calc(100vh - 90px);overflow:auto;padding:6px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;box-shadow:var(--cd-shadow);display:none;flex-direction:column;gap:2px}
+#cd-menu.show{display:flex}
+.cd-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;border-radius:8px;cursor:pointer;color:var(--text);font-size:14px;font-weight:600}
+.cd-item:hover{background:var(--bg3)}
+.cd-item.active{background:var(--accent-dim);color:var(--accent)}
+.cd-item .cd-nb{font-size:11px;font-weight:700;color:var(--text2);background:var(--bg3);border-radius:10px;padding:1px 8px}
+
+/* — Sélecteur d'interface (Classique / Clair / Sombre) — toujours visible — */
+.ui-switcher{display:flex;gap:2px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:2px}
+.ui-btn{padding:3px 8px;border-radius:4px;font-family:inherit;font-size:10px;font-weight:700;cursor:pointer;color:var(--text3);background:none;border:none;transition:.15s;white-space:nowrap}
+.ui-btn:hover{color:var(--text)}
+.ui-btn.active{background:var(--bg4);color:var(--accent)}
+@media (max-width:1280px){html[data-ui="conductor"] .gsearch,html[data-ui="conductor"] .spill{display:none}}
+@media (max-width:900px){html[data-ui="conductor"] #cd-bar{overflow-x:auto}}
+
+/* Logo + « NGX Ops » cliquables (retour à la vue d'ensemble) — les deux thèmes */
+header a.logo{color:inherit;text-decoration:none;cursor:pointer}
+header a.logo:hover{opacity:.85}
+header a.logo:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+a.cd-item{display:flex;color:inherit;text-decoration:none}
+
+html:not([data-ui="conductor"]) #cd-links-btn{display:none}
+.cd-grp.cd-links{padding:8px 9px}
+html[data-ui="conductor"] .gsearch{width:min(140px,10vw);min-width:96px}
+
+/* barre dense : marges réduites pour que tous les menus restent visibles */
+html[data-ui="conductor"] #cd-bar .cd-grp{padding:8px 9px;gap:4px}
+html[data-ui="conductor"] header{gap:10px}

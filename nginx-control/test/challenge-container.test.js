@@ -117,5 +117,35 @@ check('v12.73.0 : autoblock — defauts, parse, bornes, variables NC_* du conten
   assert.ok(!anubis.Env.some(e => e.startsWith('NC_AUTOBLOCK')));
 });
 
+console.log('\nshipper_url (journal centralise, v12.79.0)');
+const SPEC = (config, extra = {}) => C.buildContainerSpec({ engine: 'builtin', image: 'i', network: 'n', upstream: 'nginx-challenge:8080', config, secret: SECRET, ...extra });
+check('absent : aucune variable NC_SHIPPER_* (comportement historique)', () => {
+  const { config, errors } = C.parseChallengeConfig('');
+  assert.deepStrictEqual(errors, []);
+  assert.strictEqual(config.shipperUrl, '');
+  assert.ok(!SPEC(config, { shipperToken: 'S'.repeat(48) }).Env.some(e => e.startsWith('NC_SHIPPER_')));
+});
+check('defini + jeton : NC_SHIPPER_URL et NC_SHIPPER_TOKEN transmis (builtin)', () => {
+  const { config, errors } = C.parseChallengeConfig('shipper_url: http://ngx-shipper:9181/');
+  assert.deepStrictEqual(errors, []);
+  assert.strictEqual(config.shipperUrl, 'http://ngx-shipper:9181');
+  const env = SPEC(config, { shipperToken: 'S'.repeat(48) }).Env;
+  assert.ok(env.includes('NC_SHIPPER_URL=http://ngx-shipper:9181'));
+  assert.ok(env.includes('NC_SHIPPER_TOKEN=' + 'S'.repeat(48)));
+});
+check('defini sans jeton : rien transmis ; anubis : jamais transmis', () => {
+  const { config } = C.parseChallengeConfig('shipper_url: http://ngx-shipper:9181');
+  assert.ok(!SPEC(config).Env.some(e => e.startsWith('NC_SHIPPER_')));
+  const a = C.buildContainerSpec({ engine: 'anubis', image: 'i', network: 'n', upstream: 'anubis:8923', config, secret: 'a'.repeat(64), shipperToken: 'S'.repeat(48) });
+  assert.ok(!a.Env.some(e => /SHIPPER/.test(e)));
+});
+check('URL invalide refusee avec erreur explicite, rien retenu', () => {
+  for (const u of ['http://example.com:9181', 'http://ngx-shipper:9181/x', 'http://u:p@ngx-shipper:9181', 'ftp://x']) {
+    const { config, errors } = C.parseChallengeConfig('shipper_url: ' + u);
+    assert.strictEqual(config.shipperUrl, '', u);
+    assert.ok(errors.some(e => e.startsWith('shipper_url')), u);
+  }
+});
+
 console.log(`\n${pass} PASS, ${fail} FAIL`);
 process.exit(fail ? 1 : 0);

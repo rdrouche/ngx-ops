@@ -35,6 +35,8 @@ const docker  = require('../lib/docker');
 const tree    = require('../lib/fs-tree');
 const git     = require('../lib/git');
 const backup  = require('../lib/backup');
+const backupTargets = require('../lib/backup-targets');
+const backupSettings = require('../lib/backup-settings');
 const events  = require('../lib/events');
 
 const { PERMS, hasPerm, deployTokenAllows } = auth;
@@ -436,9 +438,10 @@ async function deployFromGitWork(by) {
     throw { error: 'Config test failed', testResult, log };
   }
 
-  step('Backup (ZIP)');
-  const zipResult = await createBackupZip('pre-deploy').catch(e => ({ error: e.message }));
-  step('Backup done', { zip: zipResult });
+  step('Backup (cibles automatiques)');
+  const bk = await backupTargets.autoBackup('pre-deploy', { local: true, git: false });
+  const zipResult = bk.zip;
+  step('Backup done', { zip: zipResult, git: bk.git, s3: bk.s3 });
 
   // Copy ONLY from git-work (not from merge tmp which was already deleted)
   step('Copy configs to active dirs (additive — existing files preserved)');
@@ -515,10 +518,10 @@ async function deployFromGit(by) {
     throw { error: 'Config test failed', testResult, log };
   }
 
-  step('Backup (ZIP + Git)');
-  const zipResult = await createBackupZip('pre-deploy').catch(e => ({ error: e.message }));
-  const gitResult = await gitBackupPush('pre-deploy').catch(e => ({ error: e.message }));
-  step('Backup done', { zip: zipResult, git: gitResult });
+  step('Backup (cibles automatiques)');
+  const bk = await backupTargets.autoBackup('pre-deploy', { local: true, git: true });
+  const zipResult = bk.zip, gitResult = bk.git;
+  step('Backup done', { zip: zipResult, git: gitResult, s3: bk.s3 });
 
   step('Copy configs to active dirs');
   const skipped = [];
@@ -720,6 +723,28 @@ function register(router) {
     } catch(e) { return send(res, e.testResult ? 422 : 500, { error: e.error || e.message, ...e }); }
   });
 
+  // #117 : destination S3 — etat/configuration et liste distante (aucun secret renvoye), puis test de connexion
+  router.get('/api/backups/s3', async ({ res, session }) => {
+    if (!hasPerm(session, PERMS.DEPLOY)) return httpLib.forbidden(res);
+    const s = backupSettings.load();
+    const missing = backupSettings.s3Missing(s.s3);
+    const info = { enabled: s.s3.enable, configured: missing.length === 0, missing, endpoint: s.s3.endpoint, bucket: s.s3.bucket, prefix: s.s3.prefix, keep: s.s3.keep, ngxops: s.s3.ngxops, auto: s.auto };
+    if (!info.enabled || !info.configured) return send(res, 200, info);
+    try {
+      const objs = await backupTargets.s3FromSettings(s).client.list(s.s3.prefix);
+      const objects = objs.filter(o => !o.key.slice(s.s3.prefix.length).includes('/')).sort((a, b) => (a.lastModified < b.lastModified ? 1 : -1));
+      return send(res, 200, { ...info, objects });
+    } catch (e) { return send(res, 200, { ...info, error: e.message }); }
+  });
+
+  router.post('/api/backups/s3/test', async ({ res, session }) => {
+    if (!hasPerm(session, PERMS.DEPLOY)) return httpLib.forbidden(res);
+    const b = backupTargets.s3FromSettings();
+    if (b.skipped) return send(res, 200, { ok: false, error: b.reason });
+    try { await b.client.list(b.s3.prefix, { maxKeys: 1 }); return send(res, 200, { ok: true }); }
+    catch (e) { return send(res, 200, { ok: false, error: e.message }); }
+  });
+
   router.get('/api/backups', async ({ req, res, session, url, pathname }) => {
     if (!hasPerm(session, PERMS.DEPLOY)) return httpLib.forbidden(res);
     // gitConfigured lets the frontend hide/explain the "Restaurer" button
@@ -732,21 +757,19 @@ function register(router) {
     if (!hasPerm(session, PERMS.DEPLOY) || !deployTokenAllows(session, 'backup')) return httpLib.forbidden(res);
     const body      = await parseBody(req);
     const label     = (body.label || 'manual').replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 40);
-    const mode      = body.mode || 'local'; // 'local' | 'git' | 'both'
-    const doLocal   = mode === 'local' || mode === 'both';
+    const mode      = ['local', 'git', 'both', 's3', 'all'].includes(body.mode) ? body.mode : 'local'; // 'both' = local + Git (historique), 'all' = + S3 (#117)
+    const doLocal   = mode === 'local' || mode === 'both' || mode === 'all';
     const hasGitRepo = !!getGitCfg().repoUrl;
-    const doGit     = (mode === 'git'  || mode === 'both') && hasGitRepo;
+    const doGit     = (mode === 'git'  || mode === 'both' || mode === 'all') && hasGitRepo;
+    const doS3      = mode === 's3' || mode === 'all';
     try {
-      const zipResult = doLocal
-        ? await createBackupZip(label)
-        : { skipped: true, reason: 'git-only mode' };
+      const r = await backupTargets.runTargets(label, { local: doLocal, git: doGit, s3: doS3 });
+      const zipResult = r.zip || { skipped: true, reason: 'local not requested' };
+      const gitResult = r.git || { skipped: true, reason: !hasGitRepo && (mode === 'git' || mode === 'both' || mode === 'all') ? 'GIT_REPO_URL not configured' : 'git not requested' };
+      const s3Result  = r.s3 || { skipped: true, reason: 's3 not requested' };
 
-      const gitResult = doGit
-        ? await gitBackupPush(label).catch(e => ({ ok: false, error: e.message || e.error || e.stderr }))
-        : { skipped: true, reason: !hasGitRepo ? 'GIT_REPO_URL not configured' : 'local-only mode' };
-
-      logEvent('backup.manual', { by: session.username, mode, zip: zipResult.zipName, git: gitResult }, 'backup');
-      return send(res, 201, { ok: true, mode, zip: zipResult, git: gitResult });
+      logEvent('backup.manual', { by: session.username, mode, zip: zipResult.zipName, git: gitResult, s3: s3Result.key || s3Result.error || s3Result.reason }, 'backup');
+      return send(res, 201, { ok: true, mode, zip: zipResult, git: gitResult, s3: s3Result });
     } catch(e) { return send(res, 500, { error: e.message || e.error }); }
   });
 

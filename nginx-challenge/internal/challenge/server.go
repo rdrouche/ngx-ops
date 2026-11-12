@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"nginx-challenge/internal/wire"
 )
 
 //go:embed web/*
@@ -28,6 +30,8 @@ type Server struct {
 	assets http.Handler
 	stats  *Stats
 	off    *Offenders
+	em     Emitter // décisions vers le log store (nil = aucun envoi)
+	es     emitState
 }
 
 // New construit le serveur.
@@ -142,7 +146,14 @@ func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.note(r, func(c *Counts) { c.Redirected++ })
+	// Stats globales : toute redirection. Suivi par IP (et blocage automatique) : seulement les
+	// navigations, une fois par rafale — le favicon et les ressources d'une même page ne sont pas
+	// des « échecs » (v12.78.1).
+	s.stats.Inc(func(c *Counts) { c.Redirected++ })
+	if IsNavigation(r.Header.Get("Sec-Fetch-Dest")) {
+		s.off.RecordRedirect(r.Header.Get("X-Real-IP"), r.UserAgent(), HostOnly(r.Host), func(c *Counts) { c.Redirected++ })
+		s.emitRedirect(r)
+	}
 	w.WriteHeader(http.StatusUnauthorized)
 }
 
@@ -226,6 +237,7 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.rl.allow(key) {
 		s.note(r, func(c *Counts) { c.RateLimited++ })
+		s.emitReq(r, wire.ActionBlocked, "rate_limited", map[string]any{"stage": "start"})
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "trop de tentatives"})
 		return
 	}
@@ -260,6 +272,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.rl.allow(key) {
 		s.note(r, func(c *Counts) { c.RateLimited++ })
+		s.emitReq(r, wire.ActionBlocked, "rate_limited", map[string]any{"stage": "verify"})
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "trop de tentatives"})
 		return
 	}
@@ -271,20 +284,24 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	bits, ok := s.sign.CheckChallenge(req.Token, key, host)
 	if !ok {
 		s.note(r, func(c *Counts) { c.Failed++ })
+		s.emitReq(r, wire.ActionChallenged, "failed", map[string]any{"reason": "expired_or_invalid"})
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "défi expiré ou invalide", "retry": true})
 		return
 	}
 	if !SolutionOK(req.Token, req.Counter, bits) {
 		s.note(r, func(c *Counts) { c.Failed++ })
+		s.emitReq(r, wire.ActionChallenged, "failed", map[string]any{"reason": "wrong_solution"})
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "solution incorrecte", "retry": true})
 		return
 	}
 	if !s.used.add(req.Token, time.Now().Add(s.cfg.TokenTTL+time.Minute)) {
 		s.note(r, func(c *Counts) { c.Failed++ })
+		s.emitReq(r, wire.ActionChallenged, "failed", map[string]any{"reason": "reused"})
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "défi déjà utilisé", "retry": true})
 		return
 	}
 	s.note(r, func(c *Counts) { c.Solved++ })
+	s.emitReq(r, wire.ActionAllowed, "solved", map[string]any{"bits": bits})
 	val, exp := s.sign.NewCookie(key, host)
 	http.SetCookie(w, &http.Cookie{
 		Name: s.cfg.CookieName, Value: val, Path: "/", Expires: exp, MaxAge: int(s.cfg.CookieTTL.Seconds()),

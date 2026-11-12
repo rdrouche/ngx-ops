@@ -1,0 +1,37 @@
+# Sauvegardes de la configuration — destination S3 et cibles de la sauvegarde automatique (#117).
+# Modifiable depuis la page Configuration (« Sauvegardes (S3, cibles automatiques) »), sans redémarrage.
+
+# ── Destination S3 (AWS, MinIO, Scaleway, OVH, Ceph...) ─────────────────────────────────────────────
+# Utilisée par : « Sauvegarder maintenant » (S3 / Local + Git + S3), la tâche planifiée « Sauvegarde »
+# et, si demandé plus bas, la sauvegarde automatique avant édition / déploiement.
+s3_enable: false
+# URL du service (HTTPS obligatoire). AWS : https://s3.<région>.amazonaws.com ; MinIO : https://minio.exemple.fr
+s3_endpoint:
+s3_region: us-east-1
+s3_bucket:
+# Dossier dans le bucket (dédié aux sauvegardes : la rotation ne touche que les .zip et *_ngxops.* de ce dossier).
+s3_prefix: ngx-ops/
+# true = https://endpoint/bucket/objet (MinIO, Ceph, la plupart des S3 compatibles) ; false = https://bucket.endpoint/objet (AWS virtual-host)
+s3_path_style: true
+# Autoriser http:// (réseau privé / test uniquement)
+s3_allow_insecure: false
+# Identifiants : de préférence en variables d'environnement du conteneur (prioritaires sur ce fichier) :
+#   BACKUP_S3_ACCESS_KEY, BACKUP_S3_SECRET_KEY
+# Droits minimaux conseillés : s3:PutObject, s3:ListBucket, s3:DeleteObject sur le préfixe.
+# s3_access_key:
+# s3_secret_key:
+# Nombre de sauvegardes conservées dans le bucket (par famille : ZIP nginx / archive YAML). 0 = pas de rotation.
+s3_keep: 30
+s3_timeout_s: 60
+# Envoyer aussi une archive des fichiers de configuration NGX Ops (config/*.yml) : <horodatage>_<label>_ngxops.tar.gz
+# Secrets (jetons, clés) EXCLUS par défaut. s3_include_secrets: true les inclut et EXIGE S3_BACKUP_PASSPHRASE (ou, à défaut, BACKUP_PASSPHRASE)
+# (archive alors chiffrée .ngxb : à déchiffrer avec tools/ngxb-decrypt.js).
+s3_include_ngxops: false
+s3_include_secrets: false
+
+# ── Sauvegarde automatique (avant chaque édition de configuration et chaque déploiement) ───────────────
+# Sans AUCUNE des trois clés ci-dessous : comportement historique (ZIP local ; en plus Git lors du déploiement Git).
+# Dès qu'une des trois est présente, elles s'appliquent partout (les absentes valent : local true, Git false, S3 false).
+# auto_local: true
+# auto_git: false
+# auto_s3: false

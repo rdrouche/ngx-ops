@@ -10,8 +10,8 @@ let cfgEditorRevealed = false;
 // Regroupement des fichiers par thème (clé inconnue -> « Autres »).
 const CFGED_GROUPS = [
   ['security', ['blocklists', 'challenge', 'crowdsec', 'certbot', 'certbot-dns', 'deploy-tokens']],
-  ['analysis', ['analyzer', 'intelligence', 'waf', 'goaccess', 'geoipupdate']],
-  ['infra', ['error-pages', 'godns', 'docker-autoconfig', 'agents', 'git']],
+  ['analysis', ['analyzer', 'intelligence', 'waf', 'logstore', 'goaccess', 'geoipupdate']],
+  ['infra', ['hub', 'error-pages', 'godns', 'docker-autoconfig', 'agents', 'git']],
 ];
 
 async function initConfigEditor() {

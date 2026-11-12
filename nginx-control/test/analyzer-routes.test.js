@@ -173,6 +173,10 @@ function req(method, p, cookie, body) {
     assert.strictEqual(cfgWithOverride.status, 200);
     assert.strictEqual(cfgWithOverride.body.image, 'registry.example.com/mon-fork/nginx-analyzer:latest');
   });
+  check('#80 : une image au nom de l ancien analyseur Node est signalee (legacyNodeImage), sans blocage', () => {
+    assert.strictEqual(cfgWithOverride.body.legacyNodeImage, true);
+    assert.strictEqual(cfgWithOverride.body.enabled, true);
+  });
 
   srv2.kill();
   fs.rmSync(appDir2, { recursive: true, force: true });

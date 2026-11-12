@@ -87,18 +87,15 @@ function login(username, password) {
   console.log('\nfuite du cookie de session vers un conteneur tiers proxifie (fix MISC-09)');
   check('login admin ok', () => assert.ok(cookie));
 
+  // Le relais /api/godns/panel a ete retire en v12.43.0 (voir features/godns.js) : il n y a donc
+  // plus de proxy par lequel un cookie pourrait fuiter. Le test verifie que ce relais n est PAS
+  // reapparu ; s il est un jour reintroduit, retablir les controles de fuite de cookie
+  // (en-tete Cookie non transmis, Set-Cookie du conteneur non repercute, CSP frame-ancestors).
   const panelRes = await rawGet('/api/godns/panel/', cookie);
-  check('la reponse du panneau GoDNS arrive bien (proxy fonctionnel)', () => assert.strictEqual(panelRes.status, 200));
-  check('le cookie de session du dashboard n est PAS transmis au conteneur GoDNS', () => {
-    assert.ok(godnsSawHeaders, 'le faux conteneur GoDNS n a recu aucune requete');
-    assert.strictEqual(godnsSawHeaders.cookie, undefined,
-      `le conteneur GoDNS a recu un en-tete Cookie : ${godnsSawHeaders.cookie}`);
-  });
-  check('un Set-Cookie pose par GoDNS n est pas repercute sur l origine du dashboard', () => {
+  check('le relais du panneau GoDNS reste retire (404)', () => assert.strictEqual(panelRes.status, 404));
+  check('aucune requete n atteint le conteneur GoDNS', () => assert.strictEqual(godnsSawHeaders, null));
+  check('aucun Set-Cookie du conteneur n est repercute', () => {
     assert.strictEqual(panelRes.headers['set-cookie'], undefined);
-  });
-  check('une CSP frame-ancestors restrictive protege la page proxifiee', () => {
-    assert.ok(/frame-ancestors 'self'/.test(panelRes.headers['content-security-policy'] || ''));
   });
 
   srv.kill('SIGTERM');

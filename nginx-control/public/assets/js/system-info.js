@@ -26,6 +26,7 @@ const SYSINFO_CATEGORY_SLUG = {
   'Sync & mises à jour': 'syncUpdates',
   'Rétention': 'retention',
   'Alertes': 'alerting',
+  'Journal centralisé': 'logstore',
   // Docker, GeoIP, CrowdSec, GoAccess, Branding, Menu, GoDNS, Challenge : identiques en
   // francais et en anglais, pas besoin d une cle de traduction.
 };
@@ -34,7 +35,7 @@ const SYSINFO_CATEGORY_SLUG = {
 const SYSINFO_YAML_PURPOSE_SLUG = {
   'users.yml': 'users_yml', 'smtp.yml': 'smtp_yml', 'notifications.yml': 'notifications_yml',
   'scheduler.yml': 'scheduler_yml', 'certbot.yml': 'certbot_yml', 'certbot-dns.yml': 'certbot_dns_yml',
-  'godns.yml': 'godns_yml', 'geoipupdate.yml': 'geoipupdate_yml', 'error-pages.yml': 'error_pages_yml', 'challenge.yml': 'challenge_yml', 'intelligence.yml': 'intelligence_yml', 'waf.yml': 'waf_yml',
+  'godns.yml': 'godns_yml', 'geoipupdate.yml': 'geoipupdate_yml', 'error-pages.yml': 'error_pages_yml', 'challenge.yml': 'challenge_yml', 'intelligence.yml': 'intelligence_yml', 'hub.yml': 'hub_yml', 'waf.yml': 'waf_yml', 'logstore.yml': 'logstore_yml',
   'crowdsec.yml': 'crowdsec_yml', 'git.yml': 'git_yml', 'analyzer.yml': 'analyzer_yml',
   'blocklists.yml': 'blocklists_yml',
   'deploy-tokens.yml': 'deploy_tokens_yml',
@@ -183,6 +184,7 @@ function sysinfoIsDefault(entry) {
 }
 
 async function loadSystemInfo() {
+  if (typeof versionCardLoad === 'function') versionCardLoad(false);
   const body = document.getElementById('sysinfo-body');
   const yamlBody = document.getElementById('sysinfo-yaml-body');
   if (!body) return;

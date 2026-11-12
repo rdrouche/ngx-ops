@@ -1,0 +1,15 @@
+{
+  "name": "ngx-ops-hub",
+  "version": "12.81.0",
+  "description": "NGX Ops Hub — vue globale en lecture seule de plusieurs dashboards NGX Ops (modèle pull)",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "server.js",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test --test-reporter=spec \"test/*.test.js\"",
+    "admin": "node bin/hub-admin.js"
+  },
+  "dependencies": {}
+}

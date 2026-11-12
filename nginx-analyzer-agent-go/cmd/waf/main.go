@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"nginx-analyzer-go/internal/decisions"
 	"nginx-analyzer-go/internal/waf/httpapi"
 	"nginx-analyzer-go/internal/waf/service"
 )
@@ -64,17 +66,34 @@ func main() {
 		log.Printf("[waf] ATTENTION : WAF_TOKEN vide, l'API n'est pas authentifiee (reseau interne uniquement)")
 	}
 	cfg := service.Config{
-		Version:            env("APP_VERSION", "dev"),
-		LogsDir:            env("LOGS_DIR", "/nginx/logs"),
-		LogPattern:         pattern("LOG_PATTERN", `(^|[._])access\.log$`),
-		WafLogPattern:      pattern("WAF_LOG_PATTERN", `(^|[._-])wafemu\.log$`),
-		DataDir:            env("DATA_DIR", "/waf"),
-		RulesDir:           env("RULES_DIR", "/waf-rules"),
-		CRSVersion:         env("CRS_VERSION", "v4.8.0"),
-		CRSURLTemplate:     env("CRS_URL_TEMPLATE", ""),
-		HitRetentionDays:   envInt("HIT_RETENTION_DAYS", 30, 1, 3650),
-		AlertRetentionDays: envInt("ALERT_RETENTION_DAYS", 90, 1, 3650),
-		Workers:            envInt("WAF_WORKERS", 0, 0, 64), // 0 = GOMAXPROCS-1
+		Version:             env("APP_VERSION", "dev"),
+		LogsDir:             env("LOGS_DIR", "/nginx/logs"),
+		LogPattern:          pattern("LOG_PATTERN", `(^|[._])access\.log$`),
+		WafLogPattern:       pattern("WAF_LOG_PATTERN", `(^|[._-])wafemu\.log$`),
+		DataDir:             env("DATA_DIR", "/waf"),
+		RulesDir:            env("RULES_DIR", "/waf-rules"),
+		CRSVersion:          env("CRS_VERSION", "v4.8.0"),
+		CRSURLTemplate:      env("CRS_URL_TEMPLATE", ""),
+		HitRetentionDays:    envInt("HIT_RETENTION_DAYS", 30, 1, 3650),
+		DBCompactOnStart:    env("DB_COMPACT_ON_START", "auto"),
+		DBCompactMinFreeMb:  envInt("DB_COMPACT_MIN_FREE_MB", 16, 1, 1_000_000),
+		DBCompactMinFreePct: envInt("DB_COMPACT_MIN_FREE_PCT", 20, 1, 100),
+		AlertRetentionDays:  envInt("ALERT_RETENTION_DAYS", 90, 1, 3650),
+		Workers:             envInt("WAF_WORKERS", 0, 0, 64), // 0 = GOMAXPROCS-1
+	}
+	// Decisions vers le log store, via l'API locale du shipper (SHIPPER_URL vide = desactive).
+	dec, err := decisions.New(decisions.Config{URL: os.Getenv("SHIPPER_URL"), Token: os.Getenv("SHIPPER_TOKEN"), Logger: slog.Default()})
+	if err != nil {
+		log.Printf("[waf] envoi des decisions desactive : %v", err)
+	}
+	decCtx, decStop := context.WithCancel(context.Background())
+	decDone := make(chan struct{})
+	if dec != nil {
+		cfg.Decisions = dec
+		go func() { dec.Run(decCtx); close(decDone) }()
+		log.Printf("[waf] decisions envoyees au shipper local")
+	} else {
+		close(decDone)
 	}
 	svc, err := service.New(cfg)
 	if err != nil {
@@ -110,5 +129,7 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	svc.Close()
+	decStop() // apres svc.Close() : les derniers hits sont deja en file
+	<-decDone
 	log.Printf("[waf] arrete")
 }

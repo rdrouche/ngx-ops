@@ -535,41 +535,65 @@ function generateAgentVhostContent(validated, serverNames, listen, meta = {}) {
     // JSON, tamponne, pour un agent injoignable en entree) ; relay => port
     // fixe expose directement par l'agent (connexion HTTP reelle, direct,
     // streaming complet).
+    // #124 : les snippets / monitor-ignore des locations ne doivent pas se perdre. `location /` porte ceux de la
+    // location « / » du manifeste ; toute autre location qui en a recoit son propre bloc, au proxy_pass identique
+    // (le routage reel par path reste cote agent : l'URL transmise est inchangee).
+    const proxyBody = () => {
+      const out = [];
+      out.push(`        proxy_pass ${isTunnel ? meta.tunnelTarget : meta.relayTarget};`);
+      out.push('        proxy_set_header Host $host;');
+      out.push('        proxy_set_header X-Real-IP $remote_addr;');
+      out.push('        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;');
+      out.push('        proxy_set_header X-Forwarded-Proto $scheme;');
+      if (isTunnel) {
+        // Fix v12.22.0 (audit finding AGT-04): see lib/agent-tunnel-secret.js's
+        // header comment. Only nginx, applying this dashboard-generated vhost,
+        // can attach this header — features/agent-tunnel.js refuses to route
+        // any request that lacks it, no matter what Host it carries.
+        out.push(`        proxy_set_header X-NC-Tunnel "${meta.tunnelSecret}";`);
+      }
+      if (isRelay) {
+        // v12.72.0 : WebSocket (et SSE) a travers le relais. Sans ces lignes nginx parle en HTTP/1.0 a
+        // l'agent et supprime l'en-tete Upgrade : tout upgrade echouait (l'agent Go sait pourtant les relayer).
+        // « Connection: upgrade » constant (pas de map $connection_upgrade, a definir cote http{}) ; le
+        // timeout de lecture evite de couper une connexion WebSocket inactive apres 60 s. Le mode tunnel
+        // reste sans WebSocket (JSON tamponne, voir README).
+        out.push('        proxy_http_version 1.1;');
+        out.push('        proxy_set_header Upgrade $http_upgrade;');
+        out.push('        proxy_set_header Connection "upgrade";');
+        out.push('        proxy_read_timeout 3600s;');
+        out.push('        proxy_send_timeout 3600s;');
+      }
+      if (isRelay && validated.relayScheme === 'https') {
+        out.push('        # Le saut agent est en HTTPS avec un certificat probablement');
+        out.push('        # auto-signe (voir nginx-agent/relay.go) : verification desactivee');
+        out.push('        # ici volontairement. Pour la reactiver, fournir un vrai certificat');
+        out.push('        # au flag --relay-https-cert/--relay-https-key de l agent puis');
+        out.push('        # ajouter un server-snippet (serverSnippets du manifeste) avec');
+        out.push('        # `proxy_ssl_verify on; proxy_ssl_trusted_certificate ...;`.');
+        out.push('        proxy_ssl_verify off;');
+      }
+      return out;
+    };
+    const locExtras = (loc) => {
+      const out = [];
+      if (loc.monitorIgnore) out.push('        # nginx-control-monitoring-ignore-location: on');
+      for (const file of loc.snippets) out.push(`        include snippets/${file};`);
+      return out;
+    };
+    const rootLoc = validated.locations.find((l) => l.path === '/');
     lines.push('    location / {');
-    lines.push(`        proxy_pass ${isTunnel ? meta.tunnelTarget : meta.relayTarget};`);
-    lines.push('        proxy_set_header Host $host;');
-    lines.push('        proxy_set_header X-Real-IP $remote_addr;');
-    lines.push('        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;');
-    lines.push('        proxy_set_header X-Forwarded-Proto $scheme;');
-    if (isTunnel) {
-      // Fix v12.22.0 (audit finding AGT-04): see lib/agent-tunnel-secret.js's
-      // header comment. Only nginx, applying this dashboard-generated vhost,
-      // can attach this header — features/agent-tunnel.js refuses to route
-      // any request that lacks it, no matter what Host it carries.
-      lines.push(`        proxy_set_header X-NC-Tunnel "${meta.tunnelSecret}";`);
-    }
-    if (isRelay) {
-      // v12.72.0 : WebSocket (et SSE) a travers le relais. Sans ces lignes nginx parle en HTTP/1.0 a
-      // l'agent et supprime l'en-tete Upgrade : tout upgrade echouait (l'agent Go sait pourtant les relayer).
-      // « Connection: upgrade » constant (pas de map $connection_upgrade, a definir cote http{}) ; le
-      // timeout de lecture evite de couper une connexion WebSocket inactive apres 60 s. Le mode tunnel
-      // reste sans WebSocket (JSON tamponne, voir README).
-      lines.push('        proxy_http_version 1.1;');
-      lines.push('        proxy_set_header Upgrade $http_upgrade;');
-      lines.push('        proxy_set_header Connection "upgrade";');
-      lines.push('        proxy_read_timeout 3600s;');
-      lines.push('        proxy_send_timeout 3600s;');
-    }
-    if (isRelay && validated.relayScheme === 'https') {
-      lines.push('        # Le saut agent est en HTTPS avec un certificat probablement');
-      lines.push('        # auto-signe (voir nginx-agent/relay.go) : verification desactivee');
-      lines.push('        # ici volontairement. Pour la reactiver, fournir un vrai certificat');
-      lines.push('        # au flag --relay-https-cert/--relay-https-key de l agent puis');
-      lines.push('        # ajouter un server-snippet (serverSnippets du manifeste) avec');
-      lines.push('        # `proxy_ssl_verify on; proxy_ssl_trusted_certificate ...;`.');
-      lines.push('        proxy_ssl_verify off;');
-    }
+    lines.push(...proxyBody());
+    if (rootLoc) lines.push(...locExtras(rootLoc));
     lines.push('    }');
+    for (const loc of validated.locations) {
+      if (loc.path === '/' || (!loc.snippets.length && !loc.monitorIgnore)) continue;
+      lines.push('');
+      lines.push(`    location ${loc.path} {`);
+      lines.push(...proxyBody());
+      lines.push(...locExtras(loc));
+      lines.push('    }');
+    }
   } else {
     validated.locations.forEach((loc, i) => {
       lines.push(`    location ${loc.path} {`);

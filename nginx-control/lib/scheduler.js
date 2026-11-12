@@ -63,6 +63,7 @@ function pushCertNotificationOnce(type, level, certKey, message, data) {
 const tasks = {
   createBackupZip:   async () => { throw new Error('backup not wired'); },
   gitBackupPush:     async () => { throw new Error('git backup not wired'); },
+  s3BackupPush:      async () => { throw new Error('s3 backup not wired'); },
   restartAnalyzer: async () => { throw new Error('analyzer restart not wired'); },
   listGoAccessSources: () => [],
   getGoAccessContainerStatus: async () => ({ running: false }),
@@ -148,6 +149,7 @@ function resolveOptions(name) {
     return (tasks.listGoAccessSources() || []).map(src => ({ value: src.id, label: src.name || src.id }));
   }
   if (name === 'certsync_remotes') return tasks.listCertsyncRemotes() || [];
+  if (name === 'managed_containers') return require('./scheduler-containers').schedCtOptions(); // #111
   return [];
 }
 

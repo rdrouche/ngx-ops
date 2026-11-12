@@ -61,7 +61,10 @@ check('toutes les fonctions d origine sont retrouvees', ()=>{
     for (const f of fs.readdirSync(path.join(root,dir)))
       names(fs.readFileSync(path.join(root,dir,f),'utf8')).forEach(n=>after.add(n));
   // Renommages et alias assumes lors de l extraction
-  const renamed = new Set(['loginRateKey','requireSession','getTestNetworkMode','safeParse']);
+  const renamed = new Set(['loginRateKey','requireSession','getTestNetworkMode','safeParse',
+    // Retirees ou refondues depuis l extraction : relais GoDNS (v12.43.0) et taches planifiees
+    // (lib/scheduler-tasks.js).
+    'proxyGoDNS','runScheduledReload','runScheduledGoAccessRestart','runScheduledBackup']);
   const lost = [...before].filter(n => !after.has(n) && !renamed.has(n));
   assert.deepStrictEqual(lost, [], `disparues : ${lost.join(', ')}`);
 });

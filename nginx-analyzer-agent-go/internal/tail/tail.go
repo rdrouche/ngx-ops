@@ -331,9 +331,10 @@ func (t *Tailer) safeOnEntry(entry any) {
 func (t *Tailer) read(file string) {
 	st, err := os.Stat(file)
 	if err != nil {
-		t.mu.Lock()
+		// Appelé par Poll(), qui tient deja t.mu : ne pas le reprendre ici (sync.Mutex
+		// n est pas reentrant, le tailer se bloquait definitivement quand un fichier
+		// disparaissait entre le listage et le stat, p. ex. rotation par renommage).
 		delete(t.files, file)
-		t.mu.Unlock()
 		return
 	}
 

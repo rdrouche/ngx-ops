@@ -187,7 +187,7 @@ check('chaque entree a une categorie et un override renseignes', () => {
       'Général': 'general', 'Comportement de déploiement': 'deployBehavior',
       'Sécurité & sessions': 'security', 'Déploiement Git': 'gitDeploy',
       'Répertoires nginx': 'nginxDirs', 'Sync & mises à jour': 'syncUpdates', 'Rétention': 'retention',
-      'Alertes': 'alerting',
+      'Alertes': 'alerting', 'Journal centralisé': 'logstore',
     };
     const categories = new Set(ENTRIES.map(e => e.category));
     const missing = [];
@@ -218,12 +218,12 @@ check('chaque entree a une categorie et un override renseignes', () => {
     const SLUG = {
       'users.yml': 'users_yml', 'smtp.yml': 'smtp_yml', 'notifications.yml': 'notifications_yml',
       'scheduler.yml': 'scheduler_yml', 'certbot.yml': 'certbot_yml', 'certbot-dns.yml': 'certbot_dns_yml',
-      'godns.yml': 'godns_yml', 'geoipupdate.yml': 'geoipupdate_yml', 'error-pages.yml': 'error_pages_yml', 'challenge.yml': 'challenge_yml', 'intelligence.yml': 'intelligence_yml', 'waf.yml': 'waf_yml',
+      'godns.yml': 'godns_yml', 'geoipupdate.yml': 'geoipupdate_yml', 'error-pages.yml': 'error_pages_yml', 'challenge.yml': 'challenge_yml', 'intelligence.yml': 'intelligence_yml', 'hub.yml': 'hub_yml', 'waf.yml': 'waf_yml',
       'crowdsec.yml': 'crowdsec_yml', 'git.yml': 'git_yml', 'analyzer.yml': 'analyzer_yml',
       'blocklists.yml': 'blocklists_yml', 'deploy-tokens.yml': 'deploy_tokens_yml',
       'docker-autoconfig.yml': 'docker_autoconfig_yml',
       'menu.yml': 'menu_yml',
-      'features.yml': 'features_yml',
+      'features.yml': 'features_yml', 'logstore.yml': 'logstore_yml',
     };
     const missing = [];
     for (const y of YAML_BACKED_SETTINGS) {

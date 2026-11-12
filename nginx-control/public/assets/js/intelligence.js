@@ -64,10 +64,7 @@ async function intelReset() {
   intelLoad();
 }
 
-function intelConfigure() {
-  openPage('config-editor');
-  setTimeout(() => { if (typeof cfgEditorSelect === 'function') cfgEditorSelect('intelligence'); }, 500);
-}
+// intelConfigure() : formulaire de configuration, voir intelligence-config.js (#88)
 
 // ── Ping de connexion (v12.71.0) : carte de la page Système ──────────────────
 function intelPingLines(ping) {

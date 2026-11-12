@@ -36,7 +36,7 @@ const PAGES = [
   'analyzer', 'wafemu', 'waf', 'geomap', 'digest', 'goaccess', 'api', 'webhooks',
   'godns', 'certbot', 'docker-autoconfig', 'agents', 'geoipupdate',
   'error-pages', 'challenge', 'notify', 'scheduler', 'config-editor', 'system-info',
-  'admin', 'containers',
+  'admin', 'containers', 'logstore',
 ];
 
 const PAGE_TO_SLUG = {};

@@ -1,0 +1,9 @@
+node_modules/
+data/
+.env
+config/hub.yml
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.pem
+*.key

@@ -40,7 +40,7 @@ const docker  = require('../lib/docker');
 const events  = require('../lib/events');
 const notify  = require('../lib/notify');
 const { pushNotification } = require('../lib/notifications');
-const { checkDomainConflict } = require('../lib/certs');
+const { checkDomainConflict, findUsableCertificate } = require('../lib/certs');
 const { listSSLSnippets } = require('../lib/snippets');
 const { parseAndValidate } = require('../lib/agents-yaml');
 const { validateManifest, agentVhostFileName, generateAgentVhostContent, sanitizeForFilename } = require('../lib/agent-manifest');
@@ -186,14 +186,8 @@ function resolveAgentSsl(validated, issuanceState = {}) {
   if (validated.ssl.mode === 'auto') {
     // Fix v12.21.2 (audit finding DAC-04): pass every server_name so the
     // matched certificate must cover the WHOLE vhost, not just the first name.
-    const result = checkDomainConflict(validated.serverNames[0], { allNames: validated.serverNames });
-    if (result.conflict) {
-      return {
-        type: 'cert',
-        certPath: `/etc/letsencrypt/live/${result.cert}/fullchain.pem`,
-        keyPath: `/etc/letsencrypt/live/${result.cert}/privkey.pem`,
-      };
-    }
+    const found = findUsableCertificate(validated.serverNames);
+    if (found.found) return { type: 'cert', certPath: found.certPath, keyPath: found.keyPath, source: found.source };
     return { type: 'pending' };
   }
   if (validated.ssl.mode === 'certbot_http' || validated.ssl.mode === 'certbot_dns') {
@@ -208,14 +202,8 @@ function resolveAgentSsl(validated, issuanceState = {}) {
           : "Certbot n est pas active (config/certbot.yml : enable: false) — l activer avant qu un agent puisse utiliser sslCertificate=certbot_http.",
       };
     }
-    const result = checkDomainConflict(validated.serverNames[0], { allNames: validated.serverNames });
-    if (result.conflict) {
-      return {
-        type: 'cert',
-        certPath: `/etc/letsencrypt/live/${result.cert}/fullchain.pem`,
-        keyPath: `/etc/letsencrypt/live/${result.cert}/privkey.pem`,
-      };
-    }
+    const found = findUsableCertificate(validated.serverNames);
+    if (found.found) return { type: 'cert', certPath: found.certPath, keyPath: found.keyPath, source: found.source };
     const entry = effectiveIssuanceEntry(issuanceState[validated.serverNames[0].toLowerCase()]);
     if (entry?.status === 'issuing') return { type: 'pending', issuing: true };
     if (entry?.status === 'failed') {
@@ -777,7 +765,7 @@ function register(router) {
       // jamais tokenHash — un secret ne remonte jamais dans une reponse GET,
       // meme sous forme de hash (aucune raison operationnelle de l exposer).
     }));
-    return send(res, 200, { settings, configErrors: errors, agents, defaultImage: agentBundle.DEFAULT_IMAGE });
+    return send(res, 200, { settings, configErrors: errors, agents, defaultImage: agentBundle.DEFAULT_IMAGE, defaultTag: agentBundle.DEFAULT_TAG });
   });
 
   router.addPrefix('POST', '/api/agents/', async ({ req, res, session, pathname }) => {

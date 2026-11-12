@@ -47,21 +47,15 @@ async function godnsLoad() {
 async function godnsRefreshStatus() {
   const d = await api('/godns/status').catch(() => null);
   const el = document.getElementById('godns-container-status');
-  const btnStart   = document.getElementById('godns-btn-start');
-  const btnStop    = document.getElementById('godns-btn-stop');
-  const btnRestart = document.getElementById('godns-btn-restart');
   if (!d || !d.enabled || !el) return;
   const c = d.container;
   if (!c || !c.exists) {
     el.innerHTML = '<span class="cb-status-dot stopped"></span>' + t('godns.containerAbsent');
-    btnStart.style.display = ''; btnStop.style.display = 'none'; btnRestart.style.display = 'none';
   } else if (c.running) {
     el.innerHTML = '<span class="cb-status-dot running"></span>' + t('godns.running', { image: h(c.image) })
       + ' &nbsp;<span class="badge gn">' + h(c.status) + '</span>';
-    btnStart.style.display = 'none'; btnStop.style.display = ''; btnRestart.style.display = '';
   } else {
     el.innerHTML = '<span class="cb-status-dot stopped"></span>' + t('godns.stopped') + ' <span class="badge rd">' + h(c.status) + '</span>';
-    btnStart.style.display = ''; btnStop.style.display = 'none'; btnRestart.style.display = '';
   }
 }
 

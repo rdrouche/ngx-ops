@@ -23,7 +23,7 @@
 // keep this regex's behavior exactly as predictable as it was before: only
 // the exact key names listed here are ever masked, never guessed.
 const SECRET_KEY_RE =
-  /^(\s*)("?)(password|passwd|secret|token|api_key|apikey|license_key|private_key|credentials|machine_password)("?\s*:\s*)(.*?)(,?)\s*$/i;
+  /^(\s*)("?)(password|passwd|secret|token|api_key|apikey|license_key|private_key|credentials|machine_password|shipper_sink_token)("?\s*:\s*)(.*?)(,?)\s*$/i;
 
 const MASK_PLACEHOLDER = '********';
 

@@ -57,12 +57,16 @@ const DEFAULTS = Object.freeze({
   resolver: '127.0.0.11',     // DNS interne de Docker
   exemptPathRegex: '^/[.]well-known/',
   exemptUaRegex: '',
+  whitelist: [],              // v12.75.0 : IP/CIDR jamais soumises au challenge (challenge_whitelist)
+  failOpen: false,            // v12.74.1 : conteneur injoignable -> laisser passer (true) au lieu de repondre 5xx (false)
 });
 
 // Caractères admis dans une expression régulière injectée dans un `map` nginx :
 // ni guillemet, ni antislash, ni `$`, `;`, `{`, `}`, espace ou retour ligne.
 const REGEX_ALLOWED = /^[A-Za-z0-9_./\-|()^*+?[\]:@%=,~]+$/;
 const MAX_REGEX_LEN = 200;
+const MAX_WHITELIST = 500;
+const { isValidPattern } = require('./cidr');
 const UPSTREAM_RE = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,120}[A-Za-z0-9])?(:\d{1,5})?$/;
 const RESOLVER_RE = /^[A-Za-z0-9.:-]{1,80}$/;
 
@@ -110,6 +114,22 @@ function normalizeChallengeSettings(config = {}) {
   if (config.challenge_exempt_path_regex != null) {
     const e = validateRegex('challenge_exempt_path_regex', config.challenge_exempt_path_regex);
     if (e) errors.push(e); else s.exemptPathRegex = config.challenge_exempt_path_regex;
+  }
+  if (config.challenge_whitelist != null) {
+    const list = Array.isArray(config.challenge_whitelist) ? config.challenge_whitelist : [config.challenge_whitelist];
+    const ok = [];
+    for (const raw of list.slice(0, MAX_WHITELIST + 1)) {
+      const v = String(raw).trim();
+      if (!v) continue;
+      if (ok.length >= MAX_WHITELIST) { errors.push(`challenge_whitelist : ${MAX_WHITELIST} entrees maximum`); break; }
+      if (!/^[0-9a-fA-F:.]+(\/\d{1,3})?$/.test(v) || !isValidPattern(v)) { errors.push(`challenge_whitelist : adresse ou CIDR invalide "${v.slice(0, 60)}"`); continue; }
+      if (!ok.includes(v)) ok.push(v);
+    }
+    s.whitelist = ok;
+  }
+  if (config.challenge_fail_open != null) {
+    if (typeof config.challenge_fail_open === 'boolean') s.failOpen = config.challenge_fail_open;
+    else errors.push('challenge_fail_open : true ou false attendu');
   }
   if (config.challenge_exempt_ua_regex != null) {
     const e = validateRegex('challenge_exempt_ua_regex', config.challenge_exempt_ua_regex);
@@ -184,6 +204,10 @@ function buildChallengeHttp(settings, ips, summary = '') {
   ];
   for (const ip of ips) lines.push(`    ${ip} 1;`);
   lines.push('}', '');
+  // v12.75.0 : liste blanche d'IP (challenge_whitelist) — jamais soumises au challenge, quel que soit le mode.
+  lines.push('geo $nc_exempt_ip {', '    default 0;');
+  for (const w of settings.whitelist || []) lines.push(`    ${w} 1;`);
+  lines.push('}', '');
   lines.push('map $request_uri $nc_exempt_path {', '    default 0;');
   if (settings.exemptPathRegex) lines.push(`    "~*${settings.exemptPathRegex}" 1;`);
   lines.push('}', '');
@@ -192,15 +216,15 @@ function buildChallengeHttp(settings, ips, summary = '') {
   lines.push('}', '');
   lines.push(
     '# Snippets challenge-all*.conf : 0 = soumettre (ni chemin ni user-agent exemptes) ; 1 = laisser passer.',
-    'map "$nc_exempt_path$nc_exempt_ua" $nc_gate_skip_all {',
+    'map "$nc_exempt_path$nc_exempt_ua$nc_exempt_ip" $nc_gate_skip_all {',
     '    default 1;',
-    '    "00" 0;',
+    '    "000" 0;',
     '}',
     '',
     '# Snippet challenge-gate.conf : 0 = soumettre au challenge (IP listee, ni chemin ni user-agent exemptes) ; 1 = laisser passer.',
-    'map "$blocklist_challenge$nc_exempt_path$nc_exempt_ua" $nc_gate_skip {',
+    'map "$blocklist_challenge$nc_exempt_path$nc_exempt_ua$nc_exempt_ip" $nc_gate_skip {',
     '    default 1;',
-    '    "100" 0;',
+    '    "1000" 0;',
     '}',
     '');
   for (const pr of settings.profiles || []) {
@@ -213,9 +237,9 @@ function buildChallengeHttp(settings, ips, summary = '') {
     if (pr.exemptUaRegex) lines.push(`    "~*${pr.exemptUaRegex}" 1;`);
     lines.push('}');
     if (pr.mode === 'listed') {
-      lines.push(`map "$blocklist_challenge$nc_exempt_path_${sx}$nc_exempt_ua_${sx}" $nc_gate_skip_${sx} {`, '    default 1;', '    "100" 0;', '}', '');
+      lines.push(`map "$blocklist_challenge$nc_exempt_path_${sx}$nc_exempt_ua_${sx}$nc_exempt_ip" $nc_gate_skip_${sx} {`, '    default 1;', '    "1000" 0;', '}', '');
     } else {
-      lines.push(`map "$nc_exempt_path_${sx}$nc_exempt_ua_${sx}" $nc_gate_skip_${sx} {`, '    default 1;', '    "00" 0;', '}', '');
+      lines.push(`map "$nc_exempt_path_${sx}$nc_exempt_ua_${sx}$nc_exempt_ip" $nc_gate_skip_${sx} {`, '    default 1;', '    "000" 0;', '}', '');
     }
   }
   return lines.join('\n');
@@ -279,6 +303,11 @@ function buildGateSnippet(settings, variant = 'listed', profile = null) {
     'location = /_nc_gate {',
     '    internal;',
     `    if (${v.skip}) { return 204; }`,
+    ...(settings.failOpen ? [
+      '    # challenge_fail_open: true — conteneur injoignable ou en erreur : la requete passe sans challenge.',
+      '    proxy_intercept_errors on;',
+      '    error_page 500 502 503 504 = @nc_gate_open;',
+    ] : []),
     ...res,
     `    rewrite ^ ${eng.checkPath} break;`,
     '    proxy_pass http://$nc_up;',
@@ -305,6 +334,7 @@ function buildGateSnippet(settings, variant = 'listed', profile = null) {
     '    auth_request off;',
     `    ${redirect}`,
     '}',
+    ...(settings.failOpen ? ['', 'location @nc_gate_open {', '    internal;', '    return 204;', '}'] : []),
     '',
   ].join('\n');
 }

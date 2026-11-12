@@ -179,6 +179,12 @@ const instance = { id: '3df7919e-94f5-4635-91c6-8189f6475ebf', version: '12.69.0
     const r = await C.runCycle({ settings, state: null, instance, deps: { ...mk([al(1), al(2)]), post: async () => { posted++; return { status: 200 }; } } });
     assert.strictEqual(r.outcome, 'initialized'); assert.strictEqual(r.state.cursor, 2); assert.strictEqual(posted, 0);
   });
+  await check('rejets : les motifs du serveur sont comptés (borné) pour le diagnostic (#83)', async () => {
+    const deps = { ...mk([al(1), al(2), al(3)]), post: async () => ({ status: 200, body: { accepted: 1, rejected: [{ id: 2, reason: 'scope not accepted' }, { id: 3, reason: 'scope not accepted' }] } }) };
+    const r = await C.runCycle({ settings, state: { cursor: 0 }, instance, deps, now: 10 });
+    assert.strictEqual(r.state.counters.rejected, 2);
+    assert.deepStrictEqual(r.state.rejectReasons, { 'scope not accepted': 2 });
+  });
   await check('envoi : le curseur avance, pending si le lot est plein', async () => {
     const reqs = [];
     const deps = { ...mk([al(1), al(2), al(3), al(4)]), post: async (r) => { reqs.push(r); return { status: 200, body: { accepted: 2 } }; } };

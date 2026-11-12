@@ -161,6 +161,7 @@ func (s *Service) aggregator() {
 		st.Hits++
 		hit, ev := s.buildHit(r)
 		hits = append(hits, hit)
+		s.emitHit(hit)
 		s.applyOutcome(s.trk.Process(ev, paramsOf(s.set.Get())))
 		if len(hits) >= 200 {
 			flush()
@@ -295,6 +296,8 @@ func (s *Service) background() {
 	defer t0.Stop()
 	tk := time.NewTicker(10 * time.Minute)
 	defer tk.Stop()
+	maint := time.NewTicker(6 * time.Hour) // #100 : checkpoint, optimize, incremental_vacuum, quick_check
+	defer maint.Stop()
 	sweep := time.NewTicker(time.Minute)
 	defer sweep.Stop()
 	ddTick := time.NewTicker(500 * time.Millisecond)
@@ -308,6 +311,8 @@ func (s *Service) background() {
 			purge()
 		case <-tk.C:
 			s.st.Purge(time.Now().UnixMilli(), s.cfg.HitRetentionDays, s.cfg.AlertRetentionDays)
+		case <-maint.C:
+			s.st.Maintain()
 		case <-ddTick.C:
 			if ddCheck%2 == 0 { // ~1 s : un fichier waf_json est-il suivi ?
 				if src := s.src.Load(); src != nil {

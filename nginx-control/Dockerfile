@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM node:26-alpine
 
 # Install git and openssh-client (for HTTPS and SSH repo access)
 RUN apk add --no-cache git openssh-client tzdata
@@ -84,9 +84,9 @@ ENV ALERTING_POLL_INTERVAL_MIN=${ALERTING_POLL_INTERVAL_MIN}
 # Default container_image used for the analyzer when analyzer.yml doesn't set
 # one. Unlike the other managed containers (certbot, geoipupdate, error-pages),
 # which all point at a public third-party image, the analyzer is this
-# project's own image (nginx-analyzer/) — set at build time to match wherever
+# project's own image (nginx-analyzer-go/) — set at build time to match wherever
 # you push your own build, still overridable at runtime via .env.
-ARG ANALYZER_DEFAULT_IMAGE="forge.rdr-it.com/dockerfiles/nginx-analyzer:latest"
+ARG ANALYZER_DEFAULT_IMAGE="forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:latest"
 ENV ANALYZER_DEFAULT_IMAGE=${ANALYZER_DEFAULT_IMAGE}
 # WAF emule (conteneur ngx-waf, config/waf.yml) : meme image que l'analyseur (2e binaire
 # /usr/local/bin/waf). Vide = ANALYZER_DEFAULT_IMAGE ; config/waf.yml (container_image) reste prioritaire.
@@ -127,5 +127,7 @@ COPY server.js .
 COPY lib/      lib/
 COPY features/ features/
 COPY public/   public/
+COPY tools/    tools/
+RUN chmod 0755 tools/git-askpass.sh
 EXPOSE 3000
 CMD ["node", "server.js"]

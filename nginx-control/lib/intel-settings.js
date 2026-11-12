@@ -10,6 +10,7 @@
  *  - le reste : intelligence.yml > valeurs par défaut ci-dessous
  */
 const { stripInlineComment } = require('./simple-yaml');
+const { isValidPattern } = require('./cidr');
 
 const MODES = ['anonymous', 'identified'];
 const SEVERITIES = ['low', 'medium', 'high'];
@@ -34,6 +35,8 @@ const DEFAULTS = Object.freeze({
   // v12.73.0 : blocages automatiques du challenge integre (IP qui echouent systematiquement). Opt-in :
   // la plateforme doit connaitre le type d'alerte `challenge` (voir README / prompt-intelligence).
   includeChallenge: false,
+  // v12.75.0 : IP (ou CIDR) dont les alertes ne sont JAMAIS envoyees (vos propres adresses, supervision, partenaires).
+  excludeIps: [],
   backfillHours: 0,
   // Ping de connexion (POST /api/v1/ping) : intelligent, saute le ping si un lot vient de reussir.
   pingEnable: true,
@@ -43,7 +46,7 @@ const DEFAULTS = Object.freeze({
 
 // Cles reconnues de intelligence.yml ; `enabled` est un alias de `enable` (faute de frappe frequente).
 const KNOWN_KEYS = new Set(['enable', 'enabled', 'mode', 'api_url', 'user', 'token', 'interval_seconds', 'batch_size',
-  'timeout_seconds', 'exclude_rules', 'include_rules', 'min_severity', 'share_user_agents', 'share_paths', 'share_vhost', 'include_challenge', 'backfill_hours',
+  'timeout_seconds', 'exclude_rules', 'include_rules', 'min_severity', 'share_user_agents', 'share_paths', 'share_vhost', 'include_challenge', 'exclude_ips', 'backfill_hours',
   'ping_enable', 'ping_interval_minutes', 'ping_url', 'url_ping']);
 
 const RULE_NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -151,6 +154,14 @@ function normalizeIntelSettings(text, env = {}) {
   s.sharePaths = bool(y.share_paths, DEFAULTS.sharePaths);
   s.shareVhost = bool(y.share_vhost, DEFAULTS.shareVhost);
   s.includeChallenge = bool(y.include_challenge, DEFAULTS.includeChallenge);
+  s.excludeIps = [];
+  if (y.exclude_ips !== undefined) {
+    const list = Array.isArray(y.exclude_ips) ? y.exclude_ips : String(y.exclude_ips).split(',');
+    for (const raw of list.map(x => String(x).trim()).filter(Boolean).slice(0, 500)) {
+      if (/^[0-9a-fA-F:.]+(\/\d{1,3})?$/.test(raw) && isValidPattern(raw)) s.excludeIps.push(raw);
+      else errors.push(`exclude_ips : adresse ou CIDR invalide "${raw.slice(0, 60)}"`);
+    }
+  }
   s.backfillHours = intIn(y.backfill_hours, 0, 0, 168);
   // Ping : active par defaut, toutes les 5 min (3 a 60). `ping_url` (alias `url_ping`) surcharge la
   // derivation automatique ; elle doit rester sur le MEME hote que api_url (le jeton ne part jamais ailleurs).

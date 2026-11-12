@@ -17,7 +17,7 @@
 # container_name: ngx-waf
 # Image par défaut : WAF_DEFAULT_IMAGE (ARG/ENV de l'image), sinon ANALYZER_DEFAULT_IMAGE (même image,
 # 2e binaire /usr/local/bin/waf). Cette clé la surcharge.
-# container_image: forge.rdr-it.com/dockerfiles/nginx-analyzer:latest
+# container_image: forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:latest
 # port: 9101                  # interne au réseau Docker, jamais publié
 #
 # Chemins HOTE (indispensables) — Docker résout les montages sur l'hôte, un chemin interne au
@@ -25,6 +25,12 @@
 # host_data_path: /containers/nginx-rproxy/waf          # état : réglages (settings.json), base des hits
 # host_rules_path: /containers/nginx-rproxy/waf-rules   # OWASP CRS téléchargé + règles personnalisées
 # host_logs_path: /containers/nginx-rproxy/logs         # défaut : HOST_LOGS (monté en lecture seule)
+#
+# Journal centralisé (log store, facultatif) : adresse de l'API LOCALE du shipper. Chaque hit retenu y est
+# envoyé (source=waf). Vide = aucun envoi (comportement historique). Le jeton partagé est SHIPPER_LOCAL_TOKEN
+# (ENV) ou généré une fois (config/.generated-secrets.json) ; le shipper doit utiliser la même valeur.
+# http:// uniquement vers une boucle locale, un nom de service Docker ou une IP privée ; sinon https://.
+# shipper_url: http://ngx-shipper:9181
 #
 # Fichiers de journaux lus (expressions régulières lues telles quelles, guillemets facultatifs)
 # log_pattern: (^|[._])access\.log$        # formats combined / combined_vhost

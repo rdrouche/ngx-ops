@@ -29,11 +29,13 @@ const cfg     = require('../lib/config');
 const httpLib = require('../lib/http');
 const auth    = require('../lib/auth');
 const docker  = require('../lib/docker');
+const lifecycle = require('../lib/container-lifecycle');
 const events  = require('../lib/events');
 const WC      = require('../lib/waf-config');
 const WV      = require('../lib/waf-validate');
 const WD      = require('../lib/waf-diagnostics');
 const { getWafToken } = require('../lib/waf-token');
+const { getShipperToken } = require('../lib/shipper-token');
 const { listVhostTargets } = require('../lib/vhost-targets');
 const { parseAndValidate } = require('../lib/blocklist-yaml');
 const { readChallengeOverrides } = require('../lib/challenge-settings');
@@ -129,7 +131,7 @@ async function containerStatus(name) {
 async function startWaf(r) {
   assertStartable(r);
   const c = r.config;
-  const spec = WC.buildContainerSpec(c, { token: getWafToken(), network: cfg.NGINX_NETWORK || 'nginx-net', tz: process.env.TZ });
+  const spec = WC.buildContainerSpec(c, { token: getWafToken(), network: cfg.NGINX_NETWORK || 'nginx-net', tz: process.env.TZ, shipperToken: c.shipperUrl ? getShipperToken() : undefined });
   const name = c.containerName;
   await dockerCall('POST',   `/containers/${encodeURIComponent(name)}/stop`).catch(() => {});
   await dockerCall('DELETE', `/containers/${encodeURIComponent(name)}?force=true`).catch(() => {});
@@ -490,19 +492,9 @@ function register(router) {
     if (!writeGuard(session, res)) return;
     const r = resolveConfig();
     if (!r.config.enable) return refusalResponse(res, new WafRefusal('disabled'));
-    const image = r.config.containerImage;
-    const result = await docker.pullAndCheckUpdate(image);
-    if (!result.ok) return send(res, 200, { ok: false, error: result.error });
-    let recreated = false;
-    if (result.updated) {
-      const st = await containerStatus(r.config.containerName);
-      if (st.exists) {
-        try { await startWaf(r); recreated = true; }
-        catch (e) { return send(res, 200, { ok: true, pulled: true, updated: true, recreated: false, recreateError: e.message }); }
-      }
-    }
-    logEvent('waf.image_update', `Image ${image} ${result.updated ? 'updated' : 'already up to date'}${recreated ? ', container recreated' : ''}`, session.username);
-    return send(res, 200, { ok: true, pulled: true, updated: result.updated, recreated });
+    const out = await lifecycle.legacyImageUpdate('waf');
+    logEvent('waf.image_update', `Image ${r.config.containerImage} ${out.updated ? 'updated' : 'already up to date'}${out.recreated ? ', container recreated' : ''}`, session.username);
+    return send(res, 200, out);
   });
 }
 
@@ -516,6 +508,16 @@ function afterListChange(actor) {
 function isEnabled() {
   try { return !!resolveConfig().config.enable; } catch { return false; }
 }
+
+// ─── Cycle de vie uniforme (#104/#105) ───────────────────────────────────────
+lifecycle.register({
+  id: 'waf', label: 'WAF émulé', page: 'wafemu',
+  enabled: () => !!resolveConfig().config.enable,
+  containerName: () => resolveConfig().config.containerName,
+  image: () => resolveConfig().config.containerImage,
+  create: () => startWaf(resolveConfig()),
+  mapError: (e) => (e instanceof WafRefusal ? { status: 400, body: { error: e.message, code: e.code, messageFr: e.messageFr, messageEn: e.messageEn, ...(e.details ? { details: e.details } : {}) } } : null),
+});
 
 module.exports = {
   isEnabled, register, setDeps, resolveConfig, startWaf, stopWaf, restartWaf, containerStatus, ensureContainerAtBoot,

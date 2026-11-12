@@ -6,12 +6,19 @@
 
 enable: false
 
-container_image: forge.rdr-it.com/dockerfiles/nginx-analyzer:latest
-# Portage Go (v12.52.0, ~40 % de RAM en moins, meme API, meme base SQLite) :
-# publier l image construite depuis nginx-analyzer-go/ et pointer ici. Retour
-# arriere = remettre l image Node. Voir nginx-analyzer-go/README.md.
+container_image: forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:latest
+# Analyseur Go (nginx-analyzer-go/) : seule version maintenue. L ancienne image
+# Node (nginx-analyzer) n est plus publiee ; si ce champ pointe encore dessus,
+# le dashboard continue de fonctionner (meme API, meme base) mais affiche un
+# avertissement. Migration : README, section nginx-analyzer en Go.
 container_name: ngx-analyzer
 port: 9100
+
+# Journal centralisé (log store, facultatif) : adresse de l API LOCALE du shipper. Chaque alerte du detecteur y est
+# envoyee (source=analysis, rule = type d alerte) pour etre correlee avec les autres sources. Vide = aucun envoi.
+# Jeton partage : SHIPPER_LOCAL_TOKEN (ENV) ou genere une fois (config/.generated-secrets.json).
+# http:// uniquement vers une boucle locale, un nom de service Docker ou une IP privee ; sinon https://.
+# shipper_url: http://ngx-shipper:9181
 
 # ── Chemins HOTE (indispensables) ────────────────────────────────────────────
 # Docker resout les sources de montage sur l HOTE. Un chemin qui n existe que

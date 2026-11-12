@@ -155,6 +155,17 @@ func TestBlocklistPerRuleAndSources(t *testing.T) {
 		t.Errorf("status.blocklistSources = %v", bs)
 	}
 
+	// #110 : attribution de liste pour le shipper
+	if code, res = doReq(t, "GET", u+"/api/blocklist-sources/lookup?ip=203.0.113.7", nil, nil); code != 200 || fmt.Sprint(res["sources"]) != "[listeA]" {
+		t.Fatalf("lookup: %d %v", code, res)
+	}
+	if code, res = doReq(t, "GET", u+"/api/blocklist-sources/lookup?ip=198.51.100.1", nil, nil); code != 200 || fmt.Sprint(res["sources"]) != "[]" {
+		t.Fatalf("lookup hors liste: %d %v", code, res)
+	}
+	if code, _ = doReq(t, "GET", u+"/api/blocklist-sources/lookup?ip=pas-une-ip", nil, nil); code != 400 {
+		t.Fatalf("lookup ip invalide: %d", code)
+	}
+
 	ts := time.Now().UTC().Format("02/Jan/2006:15:04:05 +0000")
 	f, _ := os.OpenFile(logFile, os.O_APPEND|os.O_WRONLY, 0o644)
 	for i := 0; i < 3; i++ {

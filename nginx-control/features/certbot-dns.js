@@ -52,6 +52,7 @@ const cfg     = require('../lib/config');
 const httpLib = require('../lib/http');
 const auth    = require('../lib/auth');
 const docker  = require('../lib/docker');
+const lifecycle = require('../lib/container-lifecycle');
 const certs   = require('../lib/certs');
 const events  = require('../lib/events');
 const { HOSTNAME_RE } = require('../lib/agent-manifest');
@@ -177,7 +178,7 @@ async function startContainer(c) {
   const provider = resolveProvider(c);
   if (!provider.image) throw new Error('container_image manquant (fournisseur "custom" sans image explicite)');
   const certsHost = c.certs_host_path;
-  if (!certsHost) throw new Error('certs_host_path manquant dans certbot-dns.yml');
+  if (!certsHost) throw new Error('certs_host_path missing in certbot-dns.yml');
   const credsHost = c.credentials_host_path;
 
   const binds = [`${certsHost}:/etc/letsencrypt:rw`];
@@ -316,8 +317,8 @@ async function issueCertificate(domains, { source = 'manual' } = {}) {
 
   const provider = resolveProvider(c);
   if (!provider.pluginFlag) return { error: 'plugin_flag manquant (fournisseur "custom" sans reglage manuel)' };
-  if (provider.credentialsFlag && !c.credentials_host_path) return { error: 'credentials_host_path manquant dans certbot-dns.yml' };
-  if (!c.certs_host_path) return { error: 'certs_host_path manquant dans certbot-dns.yml' };
+  if (provider.credentialsFlag && !c.credentials_host_path) return { error: 'credentials_host_path missing in certbot-dns.yml' };
+  if (!c.certs_host_path) return { error: 'certs_host_path missing in certbot-dns.yml' };
 
   for (const d of cleanDomains) {
     const conflict = checkDomainConflict(d);
@@ -414,19 +415,10 @@ function register(router) {
     const c = getCertbotDnsCfg();
     if (!c?.enable) return httpLib.badRequest(res, 'Certbot DNS not enabled');
     const provider = resolveProvider(c);
-    if (!provider.image) return httpLib.badRequest(res, 'container_image manquant');
-    const result = await docker.pullAndCheckUpdate(provider.image);
-    if (!result.ok) return send(res, 200, { ok: false, error: result.error });
-    let recreated = false;
-    if (result.updated) {
-      const status = await containerStatus();
-      if (status.exists) {
-        try { await startContainer(c); recreated = true; }
-        catch (e) { return send(res, 200, { ok: true, pulled: true, updated: true, recreated: false, recreateError: e.message }); }
-      }
-    }
-    logEvent('certbot_dns_image_update', `Image ${provider.image} ${result.updated ? 'updated' : 'already up to date'}${recreated ? ', container recreated' : ''}`, session.username);
-    return send(res, 200, { ok: true, pulled: true, updated: result.updated, recreated });
+    if (!provider.image) return httpLib.badRequest(res, 'container_image missing');
+    const out = await lifecycle.legacyImageUpdate('certbot-dns');
+    logEvent('certbot_dns_image_update', `Image ${provider.image} ${out.updated ? 'updated' : 'already up to date'}${out.recreated ? ', container recreated' : ''}`, session.username);
+    return send(res, 200, out);
   });
 
   /**
@@ -448,13 +440,13 @@ function register(router) {
     const cleaned = groups
       .map(g => ({ domains: (g.domains || []).filter(Boolean) }))
       .filter(g => g.domains.length);
-    if (!cleaned.length) return httpLib.badRequest(res, 'certificates (au moins un groupe de domaines) requis');
+    if (!cleaned.length) return httpLib.badRequest(res, 'certificates (at least one group of domains) required');
 
     const provider = resolveProvider(c);
     if (!provider.pluginFlag) return httpLib.badRequest(res, 'plugin_flag manquant (fournisseur "custom" sans reglage manuel)');
     if (provider.credentialsFlag && !c.credentials_host_path)
-      return httpLib.badRequest(res, 'credentials_host_path manquant dans certbot-dns.yml');
-    if (!c.certs_host_path) return httpLib.badRequest(res, 'certs_host_path manquant dans certbot-dns.yml');
+      return httpLib.badRequest(res, 'credentials_host_path missing in certbot-dns.yml');
+    if (!c.certs_host_path) return httpLib.badRequest(res, 'certs_host_path missing in certbot-dns.yml');
 
     for (const g of cleaned) {
       for (const d of g.domains) {
@@ -511,6 +503,20 @@ function register(router) {
     } catch (e) { return httpLib.serverError(res, e); }
   });
 }
+
+// ─── Cycle de vie uniforme (#104) ────────────────────────────────────────────
+lifecycle.register({
+  id: 'certbot-dns', label: 'Certbot (DNS)', page: 'certbot',
+  enabled: () => !!(getCertbotDnsCfg() || {}).enable,
+  containerName: () => CONTAINER_NAME,
+  image: () => { const c = getCertbotDnsCfg(); return c ? resolveProvider(c).image : ''; },
+  create: async () => {
+    const c = getCertbotDnsCfg();
+    const provider = resolveProvider(c);
+    if (provider.image) await pullImage(provider.image);
+    return startContainer(c);
+  },
+});
 
 module.exports = {
   register, getCertbotDnsCfg, loadCertbotDnsConfig, CONTAINER_NAME, PROVIDERS,

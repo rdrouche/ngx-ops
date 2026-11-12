@@ -237,6 +237,15 @@ const ENDPOINT_GROUPS=[
     {m:'POST',p:'/challenge/container/stop',d:'Arrêter le conteneur',dEn:'Stop the container'},
     {m:'POST',p:'/challenge/image/update',d:'Mettre à jour l’image',dEn:'Update the image'},
   ]},
+  {cat:'NGX Ops Intelligence', catKey:'intelligence', items:[
+    {m:'GET',p:'/intelligence/status',d:'État de l’envoi : réglages effectifs (sans jeton), compteurs, ping',dEn:'Sending status: effective settings (no token), counters, ping'},
+    {m:'GET',p:'/intelligence/preview',d:'Aperçu exact du prochain lot (jeton masqué)',dEn:'Exact preview of the next batch (token masked)'},
+    {m:'GET',p:'/intelligence/config',d:'Valeurs du formulaire de configuration (jamais le jeton)',dEn:'Configuration form values (never the token)'},
+    {m:'PUT',p:'/intelligence/config',d:'Enregistrer la configuration {enable,mode,api_url,user,token,…} (admin)',dEn:'Save the configuration {enable,mode,api_url,user,token,…} (admin)'},
+    {m:'POST',p:'/intelligence/send-now',d:'Envoyer immédiatement les alertes en attente',dEn:'Send pending alerts now'},
+    {m:'POST',p:'/intelligence/ping',d:'Tester la connexion à la plateforme',dEn:'Test the platform connection'},
+    {m:'POST',p:'/intelligence/reset',d:'Réinitialiser l’état d’erreur',dEn:'Reset the error state'},
+  ]},
   {cat:'Administration', catKey:'admin', items:[
     {m:'GET',p:'/system-info',d:'Registre de configuration du dashboard (admin)',dEn:'Dashboard configuration registry (admin)'},
     {m:'POST',p:'/system-info/generate-api-token',d:'Générer un nouveau API_TOKEN (affiché une seule fois)',dEn:'Generate a new API_TOKEN (shown once)'},

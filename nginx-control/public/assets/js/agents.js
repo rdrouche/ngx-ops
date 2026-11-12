@@ -333,6 +333,7 @@ async function agentsNewOpen() {
   // Image par defaut : AGENT_DEFAULT_IMAGE (ARG/ENV du Dockerfile), fournie par le serveur.
   const dd = await api('/agents').catch(() => null);
   document.getElementById('an-image').value = (dd && dd.defaultImage) || 'forge.rdr-it.com/dockerfiles/nginx-control-agent';
+  document.getElementById('an-tag').value = (dd && dd.defaultTag) || 'latest';
   document.getElementById('an-error').textContent = '';
   agentsNewToggle();
   document.getElementById('agents-new-overlay').style.display = 'flex';

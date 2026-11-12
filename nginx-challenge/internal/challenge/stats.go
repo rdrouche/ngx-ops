@@ -47,6 +47,7 @@ type Stats struct {
 	since   int64
 	path    string
 	dirty   bool
+	ver     uint64 // incrémenté à chaque modification (sauvegarde Redis)
 	nowFunc func() time.Time
 }
 
@@ -105,6 +106,7 @@ func (s *Stats) Inc(f func(*Counts)) {
 	s.mu.Lock()
 	f(s.bucket())
 	s.dirty = true
+	s.ver++
 	s.mu.Unlock()
 }
 

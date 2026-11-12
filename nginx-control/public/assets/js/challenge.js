@@ -49,11 +49,9 @@ async function challengeLoad() {
   const st = document.getElementById('ch-status');
   st.textContent = '';
   st.style.color = '';
-  const btnStart = document.getElementById('ch-start'), btnStop = document.getElementById('ch-stop'), btnImg = document.getElementById('ch-image-update');
   if (!d.enabled) {
     chSet('ch-k-container', t('challenge.external'));
     st.appendChild(chEl('div', t('challenge.containerOff', { file: d.configFile || 'challenge.yml' })));
-    btnStart.style.display = btnStop.style.display = btnImg.style.display = 'none';
   } else {
     const c = d.container || {};
     let msg, color;
@@ -64,8 +62,6 @@ async function challengeLoad() {
     chSet('ch-k-container', c.running ? t('challenge.runningShort') : (c.exists ? t('challenge.stoppedShort') : t('challenge.absentShort')), color);
     chRow(st, t('challenge.container'), msg, color);
     chRow(st, t('challenge.image'), d.image);
-    btnStart.style.display = ''; btnImg.style.display = '';
-    btnStop.style.display = c.running ? '' : 'none';
   }
 
   // Fichiers nginx
@@ -128,6 +124,8 @@ async function challengeLoad() {
   chRow(set, t('challenge.resolver'), String(s.resolver));
   chRow(set, t('challenge.exemptPath'), String(s.exemptPathRegex || '—'));
   chRow(set, t('challenge.exemptUa'), String(s.exemptUaRegex || '—'));
+  chRow(set, t('challenge.whitelist'), (s.whitelist && s.whitelist.length) ? s.whitelist.join(', ') : '—');
+  chRow(set, t('challenge.failOpen'), s.failOpen ? t('challenge.failOpenOn') : t('challenge.failOpenOff'));
   if (d.paused) chRow(set, t('challenge.state'), t('challenge.paused'));
   if (d.engine === 'builtin') {
     chRow(set, t('challenge.difficulty'), String(s.difficultyBits));

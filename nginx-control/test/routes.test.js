@@ -41,6 +41,13 @@ check('aucune route inventee hors nouveautes declarees', ()=>{
   // listees ici explicitement : le test protege contre une route qui apparait
   // par accident, pas contre l evolution du produit.
   const added = new Set([
+    '/api/redis/status',
+    '/api/backups/s3', '/api/backups/s3/test',
+    // Fusion de l ecosysteme : Hub, MFA, log store / shipper, fichiers publics
+    '/public/', '/api/hub/v1/', '/auth/mfa', '/health', '/api/health',
+    '/api/logstore/config', '/api/crowdsec/ip', '/api/config-forms', '/api/system/paths', '/api/logstore/events', '/api/logstore/instances', '/api/logstore/ip', '/api/logstore/security',
+    '/api/logstore/status', '/api/logstore/top', '/api/logstore/visits',
+    '/api/logstore/shipper/image/update', '/api/logstore/shipper/start', '/api/logstore/shipper/stop',
     '/api/analyzer/config', '/api/analyzer/status', '/api/analyzer/alerts',
     '/api/analyzer/alerts/ack', '/api/analyzer/baseline',
     '/api/analyzer/baseline/exclude', '/api/analyzer/container/start',
@@ -65,6 +72,7 @@ check('aucune route inventee hors nouveautes declarees', ()=>{
     '/api/geoipupdate/image/update', '/api/certbot/image/update', '/api/error-pages/image/update',
     '/api/analyzer/image/update',
     '/api/challenge/status', '/api/challenge/stats', '/api/challenge/container/start', '/api/challenge/container/stop', '/api/challenge/image/update', '/api/challenge/apply', '/api/challenge/offenders', '/api/challenge/unban',
+    '/api/mfa/status', '/api/mfa/totp/setup', '/api/mfa/totp/confirm', '/api/mfa/totp/disable', '/api/mfa/webauthn/options', '/api/mfa/webauthn/register', '/api/mfa/webauthn/delete', '/api/mfa/recovery/regenerate', '/api/mfa/users', '/api/mfa/admin/reset', '/api/digest/html', '/api/hub/status', '/api/hub/backup/push',
     '/api/analyzer/baseline/country', '/api/analyzer/baseline/country/exclude',
     '/api/analyzer/baseline/data', '/api/analyzer/baseline/data/exclude',
     '/api/certbot-dns/providers', '/api/certbot-dns/config', '/api/certbot-dns/status',
@@ -95,9 +103,10 @@ check('aucune route inventee hors nouveautes declarees', ()=>{
     '/api/docker-autoconfig/decisions/remove',
     '/api/menu-visibility', '/api/menu-config', '/api/menu-config/save',
     '/api/changelog',
-    '/api/containers', '/api/intelligence/status', '/api/intelligence/preview', '/api/intelligence/send-now', '/api/intelligence/ping', '/api/intelligence/reset', '/api/analyzer/baseline/keys', '/api/analyzer/baseline/profile', '/api/containers/logs', '/api/containers/logs/stream', '/api/containers/action',
+    '/api/containers', '/api/intelligence/status', '/api/intelligence/config', '/api/intelligence/preview', '/api/intelligence/send-now', '/api/intelligence/ping', '/api/intelligence/reset', '/api/analyzer/baseline/keys', '/api/analyzer/baseline/profile', '/api/containers/logs', '/api/containers/logs/stream', '/api/containers/action',
     '/api/waf/status', '/api/waf/settings', '/api/waf/vhosts', '/api/waf/rules', '/api/waf/rules/categories', '/api/waf/hits', '/api/waf/hits/stats', '/api/waf/lists', '/api/waf/lists/unlist', '/api/waf/alerts', '/api/waf/alerts/ack', '/api/waf/custom-rules', '/api/waf/simulate', '/api/waf/rules/update', '/api/waf/engine/reload', '/api/waf/diagnostics', '/api/waf/container/start', '/api/waf/container/stop', '/api/waf/container/restart', '/api/waf/image/update',
     '/api/alerting/unread', '/api/alerting/history', '/api/alerting/refresh',
+    '/api/managed-containers/overview', '/api/managed-containers/status', '/api/managed-containers/action', '/api/managed-containers/update-all',
     '/assets/',
   ]);
   const expected = new Set(fs.readFileSync(expectedFile,'utf8').split('\n').map(s=>s.trim()).filter(Boolean));

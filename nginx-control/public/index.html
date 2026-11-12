@@ -13,20 +13,24 @@
     try {
       var theme = localStorage.getItem('ngx_theme');
       if (theme && theme !== 'green') document.documentElement.setAttribute('data-theme', theme);
+      // v12.75.0 — interface « Conductor » (clair/sombre) choisie par l'utilisateur ; classique par défaut.
+      var ui = localStorage.getItem('ngx_ui');
+      if (ui === 'light' || ui === 'dark') { document.documentElement.setAttribute('data-ui', 'conductor'); document.documentElement.setAttribute('data-mode', ui); }
     } catch (e) { /* localStorage indisponible (navigation privee, etc.) — theme par defaut */ }
   })();
 </script>
 <link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
 <link href="/assets/fonts/fonts.css" rel="stylesheet">
 <link href="/assets/style.css" rel="stylesheet">
+<link href="/assets/conductor.css" rel="stylesheet">
 </head>
 <body>
 
 <header>
-  <div class="logo">
+  <a class="logo" id="hdr-logo" href="#overview" role="link" data-i18n-title="nav.backToOverview" title="Retour à la vue d'ensemble" onclick="return goOverview(event)">
     <img class="logo-img" src="/assets/logo.svg" alt="" width="28" height="28">
     NGX Ops
-  </div>
+  </a>
   <div class="hbadge" id="header-custom-text" style="display:none;background:var(--bg3)"></div>
   <div class="hbadge" id="nginx-version" title="Nginx version">v?.?.?</div>
   <div class="hbadge" id="dash-version" title="Dashboard version" style="background:var(--bg3);cursor:pointer" onclick="checkUpdates()">v?</div>
@@ -46,6 +50,7 @@
     <button class="lang-btn" data-lang="en" onclick="setLang('en')">EN</button>
     <button class="lang-btn" data-lang="fr" onclick="setLang('fr')">FR</button>
   </div>
+  <button class="ip-link-btn" id="ip-link-btn" type="button" aria-pressed="false" onclick="NgxIp.toggle()" title="Adresses IP : afficher un lien vers NGX Ops Intelligence">IP&nbsp;&#8599;</button>
   <!--
     Centre de notification (lib/notifications.js + features/notification-center.js) :
     place volontairement ici, entre le selecteur de langue et le user-pill, sur
@@ -250,6 +255,10 @@
   <div class="ni" id="nav-challenge" data-page="challenge">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5l5.5 2v4c0 3.2-2.3 5.6-5.5 7-3.2-1.4-5.5-3.8-5.5-7v-4z"/><path d="M5.8 8l1.7 1.7L10.5 6.5"/></svg>
     <span data-i18n="challenge.nav">Challenge HTTP</span>
+  </div>
+  <div class="ni" id="nav-logstore" data-page="logstore">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="3.5" rx="5.5" ry="2"/><path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2"/></svg>
+    <span data-i18n="logstore.nav">Journaux</span>
   </div>
   <div class="ns" id="nav-admin-section" data-section="admin" style="display:none">
     <span data-i18n="nav.section.admin">Administration</span>
@@ -729,6 +738,7 @@
         <div class="sc am"><div class="sl" data-i18n="blocklists.kpi.interval">FRÉQUENCE</div><div class="sv" id="bl-kpi-interval" style="font-size:13px">—</div></div>
         <div class="sc te"><div class="sl" data-i18n="blocklists.kpi.action">ACTION DE BLOCAGE</div><div class="sv" id="bl-kpi-action" style="font-size:13px">—</div></div>
       </div>
+      <div id="bl-public-note" style="display:none;margin:-4px 0 12px;font-size:12px;color:var(--text3)"></div>
 
       <div class="card">
         <div class="ctitle" data-i18n="blocklists.search.title">Rechercher une IP</div>
@@ -850,6 +860,10 @@
     <div id="bkp-list" style="display:flex;flex-direction:column;gap:6px">
       <div style="color:var(--text3);font-family:monospace;font-size:12px">Chargement…</div>
     </div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="ctitle">Destination S3</div>
+    <div id="bkp-s3" style="display:flex;flex-direction:column;gap:6px"></div>
   </div>
 </div>
 
@@ -1238,7 +1252,7 @@
       <div class="psub" data-i18n="configEditor.sub">Fichiers de configuration des intégrations — édition directe, sans passer par la machine</div></div>
     <div style="display:flex;gap:6px">
       <button class="btn sm" id="cfged-reveal-btn" style="display:none" onclick="cfgEditorToggleReveal()" data-i18n-title="configEditor.revealTitle" title="Afficher les secrets en clair">&#128065; Secrets</button>
-      <button class="btn sm" onclick="initConfigEditor()">&#8635; <span data-i18n="common.refresh">Refresh</span></button>
+      <button class="btn sm" onclick="cfgPathsOpen()" data-i18n="cfgform.paths">Chemins hôte</button><button class="btn sm" onclick="initConfigEditor()">&#8635; <span data-i18n="common.refresh">Refresh</span></button>
     </div>
   </div>
 
@@ -1253,7 +1267,7 @@
           <div class="ctitle" id="cfged-current-label">—</div>
           <div class="cfged-meta" id="cfged-current-meta"></div>
         </div>
-        <button class="btn sm primary" onclick="cfgEditorSave()" data-i18n="common.save">Sauvegarder</button>
+        <div style="display:flex;gap:6px"><button class="btn sm" onclick="cfgFormOpenCurrent()" data-i18n="cfgform.open">Formulaire</button><button class="btn sm primary" onclick="cfgEditorSave()" data-i18n="common.save">Sauvegarder</button></div>
       </div>
       <div id="cfged-status" style="font-family:monospace;font-size:11px;color:var(--text3);margin-bottom:8px"></div>
       <textarea id="cfged-editor" class="notify-editor cfged-editor" spellcheck="false"></textarea>
@@ -1290,6 +1304,18 @@
       <button class="btn sm" id="sysinfo-intel-ping-btn" onclick="intelPingTest()">&#9889; <span data-i18n="intel.ping.btn">Tester la connexion</span></button>
     </div>
     <div id="sysinfo-intel-body"></div>
+  </div>
+
+  <!-- Versions et mises à jour (v12.78.0) : vérification déplacée ici, utilisable aussi dans le thème Conductor -->
+  <div class="card" id="sysinfo-version-card" style="margin-top:16px">
+    <div class="row" style="margin-bottom:8px">
+      <div>
+        <div class="ctitle" data-i18n="sysver.title">Versions et mises à jour</div>
+        <div class="psub" data-i18n="sysver.sub">Version du dashboard et de nginx en cours, et dernière version disponible (si une source de vérification est configurée).</div>
+      </div>
+      <button class="btn sm" id="sysver-check-btn" onclick="versionCardLoad(true)">&#8635; <span data-i18n="sysver.check">Vérifier les mises à jour</span></button>
+    </div>
+    <div id="sysver-body"><div style="color:var(--text3);font-size:12px" data-i18n="common.loading">Chargement…</div></div>
   </div>
 
   <div class="card" id="sysinfo-yaml-card" style="margin-top:16px">
@@ -1379,9 +1405,7 @@ host_geoip_path: /containers/nginx-rproxy/geoip_data</pre>
       <div class="row" style="margin-bottom:10px">
         <div class="ctitle">Agent</div>
         <div style="display:flex;gap:6px">
-          <button class="btn sm" id="an-btn-start" onclick="anAction('start')" style="display:none">&#9654; <span data-i18n="analyzer.start">Demarrer</span></button>
-          <button class="btn sm" id="an-image-update" onclick="analyzerImageUpdate()" style="display:none">&#8681; <span data-i18n="analyzer.updateImage">Mettre à jour l'image</span></button>
-          <button class="btn sm danger" id="an-btn-stop" onclick="anAction('stop')" style="display:none">&#9632; <span data-i18n="analyzer.stop">Arreter</span></button>
+          <span data-ctl="analyzer"></span>
         </div>
       </div>
       <div id="an-status" class="godns-status">&mdash;</div>
@@ -1691,10 +1715,7 @@ host_logs_path: /containers/nginx-rproxy/logs</pre>
         <div class="row" style="margin-bottom:10px;flex-wrap:wrap">
           <div class="ctitle" style="margin-bottom:0" data-i18n="wafemu.container.title">Conteneur WAF</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
-            <button class="btn sm" id="wf-btn-start" onclick="wfContainer('start')" style="display:none">&#9654; <span data-i18n="analyzer.start">Demarrer</span></button>
-            <button class="btn sm" id="wf-btn-restart" onclick="wfContainer('restart')" style="display:none">&#8635; <span data-i18n="wafemu.container.restart">Redémarrer</span></button>
-            <button class="btn sm" id="wf-btn-image" onclick="wfImageUpdate()" style="display:none">&#8681; <span data-i18n="analyzer.updateImage">Mettre à jour l'image</span></button>
-            <button class="btn sm danger" id="wf-btn-stop" onclick="wfContainer('stop')" style="display:none">&#9632; <span data-i18n="analyzer.stop">Arreter</span></button>
+            <span data-ctl="waf"></span>
           </div>
         </div>
         <div id="wf-status" class="godns-status">&mdash;</div>
@@ -1885,6 +1906,7 @@ SecAuditLog /var/log/nginx/&lt;vhost&gt;.waf.log</pre>
       <option value="" data-i18n="digest.selectLatest">Dernier résumé</option>
     </select>
     <button class="btn sm primary" onclick="digGenerateNow()" id="dig-gen-btn" data-i18n="digest.generateNow">Générer maintenant</button>
+    <button class="btn sm" onclick="window.open('/api/digest/html?id='+encodeURIComponent(document.getElementById('dig-history').value||''),'_blank','noopener')" data-i18n="digest.previewMail">Aperçu du mail</button>
     <button class="btn sm danger" onclick="digDeleteSelected()" id="dig-del-btn" style="display:none" data-i18n="common.delete">Supprimer</button>
   </div>
 
@@ -1967,10 +1989,7 @@ config_host_path: /containers/nginx-rproxy/nginx-dashboard/config</pre>
       <div class="row" style="margin-bottom:10px">
         <div class="ctitle" data-i18n="godns.containerTitle">Conteneur GoDNS</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn sm" id="godns-btn-start"   onclick="godnsAction('start')"   style="display:none">▶ <span data-i18n="analyzer.start">Demarrer</span></button>
-          <button class="btn sm" id="godns-btn-stop"    onclick="godnsAction('stop')"    style="display:none">⏹ <span data-i18n="analyzer.stop">Arrêter</span></button>
-          <button class="btn sm" id="godns-btn-restart" onclick="godnsAction('restart')" style="display:none">↺ <span data-i18n="godns.restart">Redémarrer</span></button>
-          <button class="btn sm" id="godns-btn-update"  onclick="godnsAction('update')">⬆ <span data-i18n="analyzer.updateImage">Mettre à jour l'image</span></button>
+          <span data-ctl="godns"></span>
         </div>
       </div>
       <div id="godns-container-status" class="godns-status">—</div>
@@ -2113,14 +2132,14 @@ config_host_path: /containers/nginx-rproxy/nginx-dashboard/config</pre>
       <div class="ptitle" data-i18n="certbot.title">SSL / Certbot</div>
       <div class="psub" data-i18n="certbot.sub">HTTP challenge</div>
     </div>
-    <button class="btn sm" onclick="certbotLoad()">&#8635; Refresh</button>
+    <button class="btn sm" onclick="certbotLoad()">&#8635; <span data-i18n="common.refresh">Refresh</span></button>
   </div>
 
   <!-- Not configured -->
   <div id="cb-disabled" class="card" style="display:none;color:var(--amber)">
     <div data-i18n="certbot.disabled">Certbot not enabled</div>
     <div style="margin-top:8px;font-family:monospace;font-size:12px;color:var(--text3)">
-      Créer <code>/config/certbot.yml</code> :
+      <span data-i18n="certbot.create">Créer</span> <code>/config/certbot.yml</code> :
       <pre style="margin:8px 0;padding:10px;background:var(--bg);border-radius:var(--r);color:var(--text2)">enable: true
 email: admin@example.com
 staging: false
@@ -2135,31 +2154,29 @@ webroot_host_path: /containers/nginx-rproxy/webroot</pre>
     <!-- Renewal container status -->
     <div class="card">
       <div class="row" style="margin-bottom:10px">
-        <div class="ctitle">Conteneur de renouvellement</div>
+        <div class="ctitle" data-i18n="certbot.renewalContainer">Conteneur de renouvellement</div>
         <div style="display:flex;gap:6px">
-          <button class="btn sm" id="cb-container-start" onclick="certbotContainerStart()">▶ Démarrer</button>
-          <button class="btn sm" id="cb-image-update" onclick="certbotImageUpdate()" style="display:none">⬇ Mettre à jour l'image</button>
-          <button class="btn sm danger" id="cb-container-stop" onclick="certbotContainerStop()" style="display:none">⏹ Arrêter</button>
+          <span data-ctl="certbot"></span>
         </div>
       </div>
       <div id="cb-container-status" style="font-family:monospace;font-size:12px;color:var(--text3)">—</div>
       <div style="margin-top:8px;font-size:11px;color:var(--text3)">
-        ⚠ Ajouter dans chaque vhost pour le challenge HTTP :
+        <span data-i18n="certbot.vhostHint">⚠ Ajouter dans chaque vhost pour le challenge HTTP :</span>
         <code style="display:block;margin-top:4px;padding:6px 10px;background:var(--bg);border-radius:var(--r);color:var(--green)">location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }</code>
       </div>
       <div style="margin-top:6px;font-size:11px;color:var(--text3)">
-        « Mettre à jour l'image » va chercher une nouvelle version de l'image Docker (<code id="cb-image-name">—</code>) sur le registre et recrée le conteneur de renouvellement seulement si elle a changé.
+        <span data-i18n="certbot.updateHelpA">« Mettre à jour l'image » va chercher une nouvelle version de l'image Docker (</span><code id="cb-image-name">—</code><span data-i18n="certbot.updateHelpB">) sur le registre et recrée le conteneur de renouvellement seulement si elle a changé.</span>
       </div>
     </div>
 
     <!-- Issue new cert -->
     <div class="card">
-      <div class="ctitle" style="margin-bottom:12px">Générer un certificat</div>
+      <div class="ctitle" style="margin-bottom:12px" data-i18n="certbot.issueTitle">Générer un certificat</div>
 
       <!-- Staging toggle -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
         <label style="font-family:monospace;font-size:12px;color:var(--text3)">
-          <input type="checkbox" id="cb-staging"> Mode staging (test — pas de limite de taux)
+          <input type="checkbox" id="cb-staging"> <span data-i18n="certbot.staging">Mode staging (test — pas de limite de taux)</span>
         </label>
       </div>
 
@@ -2167,30 +2184,30 @@ webroot_host_path: /containers/nginx-rproxy/webroot</pre>
       <div style="display:flex;gap:8px;margin-bottom:8px">
         <input id="cb-domain-input" class="inp" placeholder="example.com" style="flex:1;max-width:300px"
           onkeydown="if(event.key==='Enter')certbotAddDomain()">
-        <button class="btn sm" onclick="certbotAddDomain()">+ Ajouter</button>
+        <button class="btn sm" onclick="certbotAddDomain()" data-i18n="certbot.add">+ Ajouter</button>
       </div>
       <div id="cb-domains-tags" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;min-height:28px"></div>
       <div id="cb-conflict-warn" style="display:none;color:var(--red);font-family:monospace;font-size:12px;margin-bottom:8px"></div>
 
       <div style="display:flex;gap:8px">
-        <button class="btn sm" onclick="certbotIssue(true)">🔍 Dry-run</button>
-        <button class="btn sm primary" onclick="certbotIssue(false)">🔒 Générer</button>
+        <button class="btn sm" onclick="certbotIssue(true)" data-i18n="certbot.dryRun">🔍 Dry-run</button>
+        <button class="btn sm primary" onclick="certbotIssue(false)" data-i18n="certbot.generate">🔒 Générer</button>
       </div>
     </div>
 
     <!-- Result log -->
     <div class="card" id="cb-result-card" style="display:none">
       <div class="row" style="margin-bottom:8px">
-        <div class="ctitle" id="cb-result-title">Résultat</div>
+        <div class="ctitle" id="cb-result-title" data-i18n="certbot.result">Résultat</div>
         <span id="cb-result-badge" class="badge"></span>
       </div>
       <div id="cb-log" class="cb-log"></div>
       <div id="cb-snippet-block" style="display:none;margin-top:12px">
         <div style="font-family:monospace;font-size:11px;color:var(--text3);margin-bottom:6px">
-          📋 Ajouter dans votre vhost nginx :
+          <span data-i18n="certbot.snippetHint">📋 Ajouter dans votre vhost nginx :</span>
         </div>
         <div id="cb-snippet" class="cb-snippet"></div>
-        <button class="btn sm" id="cb-snippet-copy-btn" style="margin-top:6px" onclick="copyToClipboard(document.getElementById('cb-snippet').textContent).then(ok => copyFeedback('cb-snippet-copy-btn', ok))">Copier</button>
+        <button class="btn sm" id="cb-snippet-copy-btn" style="margin-top:6px" onclick="copyToClipboard(document.getElementById('cb-snippet').textContent).then(ok => copyFeedback('cb-snippet-copy-btn', ok))" data-i18n="common.copy">Copier</button>
       </div>
     </div>
 
@@ -2201,65 +2218,62 @@ webroot_host_path: /containers/nginx-rproxy/webroot</pre>
 
   <!-- Existing certs (communs HTTP + DNS) -->
   <div class="card">
-    <div class="ctitle" style="margin-bottom:12px">Certificats existants</div>
+    <div class="ctitle" style="margin-bottom:12px" data-i18n="certbot.existing">Certificats existants</div>
     <div id="cb-certs-list" style="display:flex;flex-direction:column;gap:8px"></div>
   </div>
 
   <!-- ── Défi DNS (Cloudflare et autres fournisseurs) ─────────────────── -->
     <div class="row" style="margin-top:8px">
       <div>
-        <div class="ctitle" style="font-size:16px">Défi DNS (wildcards)</div>
-        <div class="psub" style="margin:0">Complémentaire au défi HTTP ci-dessus — seul moyen d'obtenir un certificat wildcard (*.exemple.com)</div>
+        <div class="ctitle" style="font-size:16px" data-i18n="certbot.dns.title">Défi DNS (wildcards)</div>
+        <div class="psub" style="margin:0" data-i18n="certbot.dns.sub">Complémentaire au défi HTTP ci-dessus — seul moyen d'obtenir un certificat wildcard (*.exemple.com)</div>
       </div>
-      <button class="btn sm" onclick="cbdnsLoad()">&#8635; Refresh</button>
+      <button class="btn sm" onclick="cbdnsLoad()">&#8635; <span data-i18n="common.refresh">Refresh</span></button>
     </div>
 
     <div id="cbdns-disabled" class="card" style="display:none;color:var(--amber)">
-      <div>Défi DNS non activé</div>
+      <div data-i18n="certbot.dns.disabled">Défi DNS non activé</div>
       <div style="margin-top:8px;font-family:monospace;font-size:12px;color:var(--text3)">
-        Renseigner <code>/config/certbot-dns.yml</code> :
+        <span data-i18n="certbot.dns.fill">Renseigner</span> <code>/config/certbot-dns.yml</code> :
         <pre style="margin:8px 0;padding:10px;background:var(--bg);border-radius:var(--r);color:var(--text2)">enable: true
 provider: cloudflare
 email: admin@example.com
 credentials_host_path: /containers/nginx-rproxy/dns-credentials/credentials.ini
 certs_host_path: /containers/nginx-rproxy/certs</pre>
-        Fournisseurs reconnus avec réglages par défaut : <span id="cbdns-providers-list">—</span>.
-        Un autre fonctionne aussi via <code>provider: custom</code> + réglages manuels (voir le fichier de configuration).
+        <span data-i18n="certbot.dns.providers">Fournisseurs reconnus avec réglages par défaut :</span> <span id="cbdns-providers-list">—</span>.
+        <span data-i18n="certbot.dns.customA">Un autre fonctionne aussi via</span> <code>provider: custom</code> <span data-i18n="certbot.dns.customB">+ réglages manuels (voir le fichier de configuration).</span>
       </div>
     </div>
 
     <div id="cbdns-main" style="display:none;flex-direction:column;gap:16px">
       <div class="card">
         <div class="row" style="margin-bottom:10px">
-          <div class="ctitle">Conteneur de renouvellement — <span id="cbdns-provider-label">—</span></div>
+          <div class="ctitle"><span data-i18n="certbot.renewalContainer">Conteneur de renouvellement</span> — <span id="cbdns-provider-label">—</span></div>
           <div style="display:flex;gap:6px">
-            <button class="btn sm" id="cbdns-container-start" onclick="cbdnsContainerStart()">▶ Démarrer</button>
-            <button class="btn sm" id="cbdns-image-update" onclick="cbdnsImageUpdate()" style="display:none">⬇ Mettre à jour l'image</button>
-            <button class="btn sm danger" id="cbdns-container-stop" onclick="cbdnsContainerStop()" style="display:none">⏹ Arrêter</button>
+            <span data-ctl="certbot-dns"></span>
           </div>
         </div>
         <div id="cbdns-container-status" style="font-family:monospace;font-size:12px;color:var(--text3)">—</div>
         <div id="cbdns-nocreds-warn" style="display:none;margin-top:8px;font-size:11px;color:var(--amber)">
-          ⚠ <code>credentials_host_path</code> non configuré dans <code>certbot-dns.yml</code> — nécessaire pour ce fournisseur.
+          ⚠ <code>credentials_host_path</code> <span data-i18n="certbot.dns.nocredsA">non configuré dans</span> <code>certbot-dns.yml</code> <span data-i18n="certbot.dns.nocredsB">— nécessaire pour ce fournisseur.</span>
         </div>
       </div>
 
       <div class="card">
-        <div class="ctitle" style="margin-bottom:8px">Émettre un ou plusieurs certificats</div>
+        <div class="ctitle" style="margin-bottom:8px" data-i18n="certbot.dns.issueTitle">Émettre un ou plusieurs certificats</div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:8px">
-          Une ligne = un certificat (une commande <code>certbot certonly</code>), exécutées l'une après l'autre —
-          comme dans l'exemple du <code>docker-compose.yml</code>. Domaines séparés par une virgule sur chaque ligne.
+          <span data-i18n="certbot.dns.helpA">Une ligne = un certificat (une commande</span> <code>certbot certonly</code><span data-i18n="certbot.dns.helpB">), exécutées l'une après l'autre — comme dans l'exemple du</span> <code>docker-compose.yml</code><span data-i18n="certbot.dns.helpC">. Domaines séparés par une virgule sur chaque ligne.</span>
         </div>
         <textarea id="cbdns-groups" class="inp" rows="3" style="width:100%;font-family:monospace;font-size:12px;resize:vertical"
           placeholder="domain-a.tld, *.domain-a.tld&#10;domain-b.tld, *.domain-b.tld"></textarea>
         <div id="cbdns-conflict-warn" style="display:none;color:var(--red);font-family:monospace;font-size:12px;margin-top:8px"></div>
         <div style="display:flex;gap:8px;margin-top:10px">
-          <button class="btn sm primary" id="cbdns-issue-btn" onclick="cbdnsIssue()">🔒 Générer</button>
+          <button class="btn sm primary" id="cbdns-issue-btn" onclick="cbdnsIssue()" data-i18n="certbot.generate">🔒 Générer</button>
         </div>
       </div>
 
       <div class="card" id="cbdns-result-card" style="display:none">
-        <div class="ctitle" style="margin-bottom:8px">Résultat</div>
+        <div class="ctitle" style="margin-bottom:8px" data-i18n="certbot.result">Résultat</div>
         <div id="cbdns-log" class="cb-log"></div>
       </div>
     </div>
@@ -2505,10 +2519,8 @@ geoip_host_path: /containers/nginx-rproxy/geoip_data</pre>
       <div class="row" style="margin-bottom:10px">
         <div class="ctitle" data-i18n="geoip.containerTitle">Conteneur geoipupdate</div>
         <div style="display:flex;gap:6px">
-          <button class="btn sm" id="gi-start" onclick="geoipupdateStart()">▶ <span data-i18n="analyzer.start">Demarrer</span></button>
+          <span data-ctl="geoipupdate"></span>
           <button class="btn sm primary" id="gi-update-now" onclick="geoipupdateUpdateNow()" style="display:none">⟳ <span data-i18n="geoip.updateNowBtn">Mettre à jour maintenant</span></button>
-          <button class="btn sm" id="gi-image-update" onclick="geoipupdateImageUpdate()" style="display:none">⬇ <span data-i18n="analyzer.updateImage">Mettre à jour l'image</span></button>
-          <button class="btn sm danger" id="gi-stop" onclick="geoipupdateStop()" style="display:none">⏹ <span data-i18n="analyzer.stop">Arrêter</span></button>
         </div>
       </div>
       <div id="gi-status" style="font-family:monospace;font-size:12px;color:var(--text3)">—</div>
@@ -2558,9 +2570,7 @@ template_name: connection</pre>
       <div class="row" style="margin-bottom:10px">
         <div class="ctitle" data-i18n="errorPages.containerTitle">Conteneur error-pages</div>
         <div style="display:flex;gap:6px">
-          <button class="btn sm" id="ep-start" onclick="errorPagesStart()">▶ <span data-i18n="analyzer.start">Demarrer</span></button>
-          <button class="btn sm" id="ep-image-update" onclick="errorPagesImageUpdate()" style="display:none">⬇ <span data-i18n="analyzer.updateImage">Mettre à jour l'image</span></button>
-          <button class="btn sm danger" id="ep-stop" onclick="errorPagesStop()" style="display:none">⏹ <span data-i18n="analyzer.stop">Arrêter</span></button>
+          <span data-ctl="error-pages"></span>
         </div>
       </div>
       <div id="ep-status" style="font-family:monospace;font-size:12px;color:var(--text3)">—</div>
@@ -2717,9 +2727,7 @@ enable: true                   # gérer le conteneur depuis ce dashboard</pre>
       <div class="row" style="margin-bottom:10px">
         <div class="ctitle" data-i18n="challenge.containerTitle">Conteneur</div>
         <div style="display:flex;gap:6px">
-          <button class="btn sm" id="ch-start" onclick="challengeStart()" style="display:none">▶ <span data-i18n="analyzer.start">Démarrer</span></button>
-          <button class="btn sm" id="ch-image-update" onclick="challengeImageUpdate()" style="display:none">⬇ <span data-i18n="analyzer.updateImage">Mettre à jour l'image</span></button>
-          <button class="btn sm danger" id="ch-stop" onclick="challengeStop()" style="display:none">⏹ <span data-i18n="analyzer.stop">Arrêter</span></button>
+          <span data-ctl="challenge"></span>
         </div>
       </div>
       <div id="ch-status" style="font-size:12px;color:var(--text3)">—</div>
@@ -2749,6 +2757,134 @@ enable: true                   # gérer le conteneur depuis ce dashboard</pre>
       <div class="ctitle" data-i18n="challenge.ipsTitle">IP soumises au challenge (règles d'analyse)</div>
       <div id="ch-ips" style="font-family:monospace;font-size:12px;color:var(--text2);word-break:break-all"></div>
       <div class="nf-hint" id="ch-ips-note" style="margin-top:6px"></div>
+    </div>
+  </div>
+</div>
+<!-- JOURNAUX (log store) -->
+<div class="page" id="page-logstore">
+  <div class="row">
+    <div>
+      <div class="ptitle" data-i18n="logstore.nav">Journaux</div>
+      <div class="psub" data-i18n="logstore.sub">Journal centralisé (log store) : recherche des requêtes et des décisions (WAF, challenge, blocklist), statistiques de visites, fiche par IP. L'envoi est assuré par le shipper.</div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button class="btn sm" onclick="logstoreConfigure()" data-i18n="logstore.cfg.open">Configurer</button>
+      <button class="btn sm" onclick="logstoreLoad()">&#8635; <span data-i18n="common.refresh">Refresh</span></button>
+    </div>
+  </div>
+
+  <div id="ls-off" class="card" style="display:none;color:var(--amber)">
+    <div data-i18n="logstore.offMsg">Journal centralisé non configuré.</div>
+    <div style="margin-top:8px;font-size:12px;color:var(--text3)">
+      <span data-i18n="logstore.offHint">Renseigner dans</span> <code>/config/logstore.yml</code> :
+      <pre style="margin:8px 0;padding:10px;background:var(--bg);border-radius:var(--r);color:var(--text2)">enable: true
+url: https://logs.example.com        # API du log store
+# jeton de lecture : variable LOGSTORE_READ_TOKEN (recommandé)
+
+shipper_enable: true                 # envoi des journaux (conteneur géré ici)
+shipper_host_data_path: /srv/ngx/shipper
+# jeton d'envoi : variable LOGSINK_TOKEN</pre>
+    </div>
+  </div>
+
+  <div id="ls-main" style="display:none;flex-direction:column;gap:16px">
+    <div class="card">
+      <div class="ctitle" data-i18n="logstore.summary">État</div>
+      <div class="sgrid sgrid-auto">
+        <div class="sc bl"><div class="sl" data-i18n="logstore.k.store">LOG STORE</div><div class="sv" id="ls-k-store" style="font-size:16px">—</div></div>
+        <div class="sc"><div class="sl" data-i18n="logstore.k.shipper">SHIPPER</div><div class="sv" id="ls-k-shipper" style="font-size:16px">—</div></div>
+      </div>
+      <div id="ls-errors" style="margin-top:8px;font-size:12px;color:var(--red)"></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:12px">
+        <div>
+          <div class="ctitle" style="font-size:12px" data-i18n="logstore.store.title">Log store</div>
+          <div id="ls-store" style="font-size:12px;color:var(--text2);line-height:1.6"></div>
+        </div>
+        <div>
+          <div class="ctitle" style="font-size:12px" data-i18n="logstore.shipper.title">Shipper (envoi)</div>
+          <div id="ls-shipper" style="font-size:12px;color:var(--text2);line-height:1.6"></div>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <span data-ctl="shipper"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <button class="btn sm primary" id="ls-btn-search" onclick="lsTab('search')" data-i18n="logstore.tab.search">Recherche</button>
+        <button class="btn sm" id="ls-btn-stats" onclick="lsTab('stats')" data-i18n="logstore.tab.stats">Statistiques</button>
+        <button class="btn sm" id="ls-btn-ip" onclick="lsTab('ip')" data-i18n="logstore.tab.ip">Fiche IP</button>
+      </div>
+
+      <div id="ls-tab-search">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px">
+          <div class="nf-field"><label data-i18n="logstore.f.window">Période</label>
+            <select id="ls-f-window"><option value="15m">15 min</option><option value="1h" selected>1 h</option><option value="6h">6 h</option><option value="24h">24 h</option><option value="72h" data-i18n="logstore.win.3d">3 j</option><option value="168h" data-i18n="logstore.win.7d">7 j</option><option value="720h" data-i18n="logstore.win.30d">30 j</option></select></div>
+          <div class="nf-field"><label data-i18n="logstore.f.site">Site</label><input type="text" id="ls-f-site" maxlength="253" placeholder="example.com"></div>
+          <div class="nf-field"><label data-i18n="logstore.f.source">Source</label>
+            <select id="ls-f-source"><option value="" data-i18n="logstore.all">Tous</option><option value="access">access</option><option value="waf">waf</option><option value="challenge">challenge</option><option value="blocklist">blocklist</option><option value="crowdsec">crowdsec</option><option value="analysis">analysis</option></select></div>
+          <div class="nf-field"><label data-i18n="logstore.f.action">Action</label>
+            <select id="ls-f-action"><option value="" data-i18n="logstore.all">Tous</option><option value="allowed">allowed</option><option value="blocked">blocked</option><option value="challenged">challenged</option><option value="logged">logged</option></select></div>
+          <div class="nf-field"><label data-i18n="logstore.f.status">Statut</label><input type="text" id="ls-f-status" maxlength="3" placeholder="404 / 5xx"></div>
+          <div class="nf-field"><label data-i18n="logstore.f.ip">IP</label><input type="text" id="ls-f-ip" maxlength="45" placeholder="203.0.113.9"></div>
+          <div class="nf-field"><label data-i18n="logstore.f.path">Chemin contient</label><input type="text" id="ls-f-path" maxlength="200" placeholder="/wp-login"></div>
+          <div class="nf-field"><label data-i18n="logstore.f.ua">User-agent contient</label><input type="text" id="ls-f-ua" maxlength="200" placeholder="curl"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <button class="btn sm primary" onclick="lsSearch(false)" data-i18n="logstore.search">Rechercher</button>
+          <span id="ls-note" class="nf-hint" style="margin:0"></span>
+        </div>
+        <div class="tw"><table>
+          <thead><tr><th data-i18n="logstore.c.time">Date</th><th data-i18n="logstore.c.site">Site</th><th>IP</th><th data-i18n="logstore.c.request">Requête</th><th data-i18n="logstore.c.status">Statut</th><th data-i18n="logstore.c.decision">Décision</th><th data-i18n="logstore.c.rule">Règle</th><th>UA</th></tr></thead>
+          <tbody id="ls-rows"></tbody>
+        </table></div>
+        <div style="margin-top:8px"><button class="btn sm" id="ls-more" style="display:none" onclick="lsSearch(true)" data-i18n="logstore.more">Plus anciens</button></div>
+      </div>
+
+      <div id="ls-tab-stats" style="display:none">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px">
+          <div class="nf-field"><label data-i18n="logstore.f.window">Période</label>
+            <select id="ls-s-window" onchange="lsStatsLoad()"><option value="1h">1 h</option><option value="6h">6 h</option><option value="24h" selected>24 h</option><option value="72h" data-i18n="logstore.win.3d">3 j</option><option value="168h" data-i18n="logstore.win.7d">7 j</option><option value="720h" data-i18n="logstore.win.30d">30 j</option><option value="2160h" data-i18n="logstore.win.90d">90 j</option><option value="8760h" data-i18n="logstore.win.365d">1 an</option></select></div>
+          <div class="nf-field"><label data-i18n="logstore.f.site">Site</label><input type="text" id="ls-s-site" maxlength="253" placeholder="example.com" onchange="lsStatsLoad()"></div>
+        </div>
+        <div class="ctitle" style="font-size:12px" data-i18n="logstore.stats.visitsTitle">Requêtes</div>
+        <div id="ls-visits" style="margin-bottom:14px"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+          <div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+              <div class="ctitle" style="font-size:12px;margin:0" data-i18n="logstore.stats.topTitle">Classement</div>
+              <select id="ls-s-dim" onchange="lsTop()">
+                <option value="path">path</option><option value="ip">ip</option><option value="ua">ua</option><option value="country">country</option>
+                <option value="site">site</option><option value="status">status</option><option value="rule">rule</option>
+                <option value="referer_host">referer_host</option><option value="bot_class">bot_class</option>
+                <option value="source">source</option><option value="action">action</option>
+              </select>
+            </div>
+            <div id="ls-top"></div>
+          </div>
+          <div>
+            <div class="ctitle" style="font-size:12px" data-i18n="logstore.stats.securityTitle">Sécurité</div>
+            <div id="ls-security"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="ls-tab-ip" style="display:none">
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
+          <div class="nf-field"><label>IP</label><input type="text" id="ls-ip-input" maxlength="45" placeholder="203.0.113.9" onkeydown="if(event.key==='Enter')lsIpLoad(false)"></div>
+          <div class="nf-field"><label data-i18n="logstore.f.window">Période</label>
+            <select id="ls-ip-window"><option value="24h">24 h</option><option value="72h" data-i18n="logstore.win.3d">3 j</option><option value="168h" selected data-i18n="logstore.win.7d">7 j</option><option value="720h" data-i18n="logstore.win.30d">30 j</option></select></div>
+          <button class="btn sm primary" onclick="lsIpLoad(false)" data-i18n="logstore.search">Rechercher</button>
+        </div>
+        <div id="ls-ip-summary" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:8px"></div>
+        <div id="ls-ip-note" class="nf-hint" style="margin:0 0 6px 0"></div>
+        <div class="tw"><table>
+          <thead><tr><th data-i18n="logstore.c.time">Date</th><th data-i18n="logstore.c.site">Site</th><th>IP</th><th data-i18n="logstore.c.request">Requête</th><th data-i18n="logstore.c.status">Statut</th><th data-i18n="logstore.c.decision">Décision</th><th data-i18n="logstore.c.rule">Règle</th><th>UA</th></tr></thead>
+          <tbody id="ls-ip-rows"></tbody>
+        </table></div>
+        <div style="margin-top:8px"><button class="btn sm" id="ls-ip-more" style="display:none" onclick="lsIpLoad(true)" data-i18n="logstore.more">Plus anciens</button></div>
+      </div>
     </div>
   </div>
 </div>
@@ -3386,6 +3522,7 @@ function runPageLoader(page) {
   if(page==='geoipupdate')geoipupdateLoad();
   if(page==='error-pages')errorPagesLoad();
   if(page==='challenge')challengeLoad();
+  if(page==='logstore')logstoreLoad();
   if(page==='analyzer')initAnalyzer();
   if(page==='wafemu')initWafemu();
   if(page==='waf')initWaf();
@@ -3829,12 +3966,21 @@ function copyFeedback(btnId, ok, okLabel, failLabel) {
 <script src="/assets/js/containers.js"></script>
 <script src="/assets/js/baseline-view.js"></script>
 <script src="/assets/js/intelligence.js"></script>
+<script src="/assets/js/modal.js"></script>
+<script src="/assets/js/intelligence-config.js"></script>
 <script src="/assets/js/digest.js"></script>
 <script src="/assets/js/godns.js"></script>
 <script src="/assets/js/geoipupdate.js"></script>
 <script src="/assets/js/error-pages.js"></script>
 <script src="/assets/js/blocklists.js"></script>
 <script src="/assets/js/challenge.js"></script>
+<script src="/assets/js/logstore.js"></script>
+<script src="/assets/js/logstore-config.js"></script>
+<script src="/assets/js/config-forms.js"></script>
+<script src="/assets/js/container-control.js"></script>
+<script src="/assets/js/mfa.js"></script>
+<script src="/assets/js/ui-theme.js"></script>
+<script src="/assets/js/ip-link.js"></script>
 <script src="/assets/js/challenge-offenders.js"></script>
 <script src="/assets/js/page-help.js"></script>
 <script src="/assets/js/menu-form.js"></script>

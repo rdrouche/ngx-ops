@@ -217,12 +217,6 @@ function wfRenderContainer(d) {
 
   const can = wfCan();
   const show = (id, on) => { const b = wfGet(id); if (b) b.style.display = on && can ? '' : 'none'; };
-  show('wf-btn-start', !c.running);
-  show('wf-btn-restart', c.running);
-  show('wf-btn-stop', c.running);
-  show('wf-btn-image', true);
-  const start = wfGet('wf-btn-start');
-  if (start) start.disabled = blockers.length > 0;
   wfGet('wf-image-name').textContent = (d.config && d.config.image) || '—';
 
   const k = wfGet('wf-kpis');

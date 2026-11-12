@@ -84,10 +84,10 @@ function login(username, password) {
   check('liste avec un role viewer (pas DEPLOY) -> refuse', () => assert.ok([401, 403].includes(listViewer.status)));
 
   const list = await req('GET', '/api/config-editor/files', ck);
-  check('liste -> exactement les quinze fichiers, tous absents au depart', () => {
+  check('liste -> exactement les dix-sept fichiers, tous absents au depart', () => {
     assert.strictEqual(list.status, 200);
     const keys = list.body.files.map(f => f.key).sort();
-    assert.deepStrictEqual(keys, ['agents', 'analyzer', 'blocklists', 'certbot', 'certbot-dns', 'challenge', 'crowdsec', 'deploy-tokens', 'docker-autoconfig', 'error-pages', 'geoipupdate', 'git', 'goaccess', 'godns', 'intelligence', 'waf']);
+    assert.deepStrictEqual(keys, ['agents', 'analyzer', 'backup', 'blocklists', 'certbot', 'certbot-dns', 'challenge', 'crowdsec', 'deploy-tokens', 'docker-autoconfig', 'error-pages', 'geoipupdate', 'git', 'goaccess', 'godns', 'hub', 'intelligence', 'logstore', 'waf']);
     assert.ok(list.body.files.every(f => f.exists === false));
   });
 

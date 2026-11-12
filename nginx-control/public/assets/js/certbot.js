@@ -34,29 +34,22 @@ async function certbotLoad() {
 async function certbotRefreshStatus() {
   const d = await api('/certbot/status').catch(() => null);
   const el = document.getElementById('cb-container-status');
-  const btnStart = document.getElementById('cb-container-start');
-  const btnStop  = document.getElementById('cb-container-stop');
-  const btnImg   = document.getElementById('cb-image-update');
   if (!d?.enabled || !el) return;
   const c = d.container;
-  if (btnImg) btnImg.style.display = '';
   if (!c?.exists) {
-    el.innerHTML = '<span class="cb-status-dot stopped"></span>Conteneur absent';
-    btnStart.style.display = ''; btnStop.style.display = 'none';
+    el.innerHTML = '<span class="cb-status-dot stopped"></span>' + h(t('certbot.js.absent'));
   } else if (c.running) {
-    el.innerHTML = '<span class="cb-status-dot running"></span>En cours — ' + h(c.image) + ' (démarré ' + new Date(c.started).toLocaleString() + ')';
-    btnStart.style.display = 'none'; btnStop.style.display = '';
+    el.innerHTML = '<span class="cb-status-dot running"></span>' + h(t('certbot.js.running', { image: c.image, started: new Date(c.started).toLocaleString() }));
   } else {
-    el.innerHTML = '<span class="cb-status-dot stopped"></span>Arrêté (' + h(c.status) + ')';
-    btnStart.style.display = ''; btnStop.style.display = 'none';
+    el.innerHTML = '<span class="cb-status-dot stopped"></span>' + h(t('certbot.js.stopped', { status: c.status }));
   }
 }
 
 async function certbotContainerStart() {
-  document.getElementById('cb-container-status').innerHTML = '<span style="color:var(--text3)">Démarrage…</span>';
+  document.getElementById('cb-container-status').innerHTML = '<span style="color:var(--text3)">' + h(t('certbot.js.starting')) + '</span>';
   const d = await api('/certbot/container/start', { method: 'POST' }).catch(e => ({ error: e.message }));
   if (d?.error) {
-    document.getElementById('cb-container-status').innerHTML = '<span style="color:var(--red)">Erreur : ' + h(d.error) + '</span>';
+    document.getElementById('cb-container-status').innerHTML = '<span style="color:var(--red)">' + h(t('certbot.js.error', { msg: d.error })) + '</span>';
     return;
   }
   await certbotRefreshStatus();
@@ -64,18 +57,18 @@ async function certbotContainerStart() {
 
 async function certbotImageUpdate() {
   const btn = document.getElementById('cb-image-update');
-  if (btn) { btn.disabled = true; btn.textContent = 'Vérification…'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('certbot.js.checking'); }
   const d = await api('/certbot/image/update', { method: 'POST' }).catch(e => ({ error: e.message }));
-  if (btn) { btn.disabled = false; btn.textContent = '⬇ Mettre à jour l\'image'; }
-  if (!d || d.error || d.ok === false) { alert('Erreur : ' + (d?.error || 'mise à jour impossible')); return; }
+  if (btn) { btn.disabled = false; btn.textContent = '⬇ ' + t('certbot.updateImage'); }
+  if (!d || d.error || d.ok === false) { alert(t('certbot.js.error', { msg: d?.error || t('certbot.js.updateFailed') })); return; }
   alert(d.updated
-    ? 'Nouvelle image téléchargée' + (d.recreated ? ', conteneur recréé.' : '.')
-    : 'Image déjà à jour.');
+    ? t('certbot.js.imgPulled') + (d.recreated ? t('certbot.js.imgRecreated') : '.')
+    : t('certbot.js.imgUpToDate'));
   await certbotRefreshStatus();
 }
 
 async function certbotContainerStop() {
-  if (!confirm('Arrêter le conteneur de renouvellement certbot ?')) return;
+  if (!confirm(t('certbot.js.confirmStop'))) return;
   await api('/certbot/container/stop', { method: 'POST' }).catch(() => {});
   await certbotRefreshStatus();
 }
@@ -93,7 +86,7 @@ async function certbotAddDomain() {
     if (c?.conflict) {
       document.getElementById('cb-conflict-warn').style.display = '';
       document.getElementById('cb-conflict-warn').textContent =
-        '⚠ ' + val + ' est déjà couvert par le certificat "' + c.cert + '" (' + c.match + ', ' + c.type + ')';
+        t('certbot.js.covered', { domain: val, cert: c.cert, match: c.match, type: c.type });
     }
   }
 }
@@ -123,8 +116,8 @@ function certbotRenderDomains() {
 }
 
 async function certbotIssue(dryRun) {
-  if (!cbDomains.length) { alert('Ajouter au moins un domaine'); return; }
-  const label = dryRun ? 'Dry-run' : 'Génération';
+  if (!cbDomains.length) { alert(t('certbot.js.needDomain')); return; }
+  const label = dryRun ? t('certbot.js.dryRunLabel') : t('certbot.js.genLabel');
   const resultCard  = document.getElementById('cb-result-card');
   const resultTitle = document.getElementById('cb-result-title');
   const resultBadge = document.getElementById('cb-result-badge');
@@ -135,7 +128,7 @@ async function certbotIssue(dryRun) {
   resultTitle.textContent  = label + ' — ' + cbDomains.join(', ');
   resultBadge.textContent  = '...';
   resultBadge.className    = 'badge gy';
-  logEl.textContent        = 'En cours…';
+  logEl.textContent        = t('certbot.js.inProgress');
   snippetBlock.style.display = 'none';
   resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
@@ -146,14 +139,14 @@ async function certbotIssue(dryRun) {
   }).catch(e => ({ error: e.message, ok: false }));
 
   if (d?.error && !d?.logs) {
-    logEl.textContent    = 'Erreur : ' + d.error;
-    resultBadge.textContent = 'ERREUR';
+    logEl.textContent    = t('certbot.js.error', { msg: d.error });
+    resultBadge.textContent = t('certbot.js.badgeError');
     resultBadge.className   = 'badge rd';
     return;
   }
 
-  logEl.textContent = (d.command ? '$ ' + d.command + '\n\n' : '') + (d.logs || '(pas de logs)');
-  resultBadge.textContent = d.ok ? (dryRun ? 'DRY-RUN OK' : 'SUCCÈS') : 'ÉCHEC';
+  logEl.textContent = (d.command ? '$ ' + d.command + '\n\n' : '') + (d.logs || t('certbot.js.noLogs'));
+  resultBadge.textContent = d.ok ? (dryRun ? t('certbot.js.badgeDryOk') : t('certbot.js.badgeOk')) : t('certbot.js.badgeFail');
   resultBadge.className   = 'badge ' + (d.ok ? 'gn' : 'rd');
 
   if (d.snippet) {
@@ -170,7 +163,7 @@ async function certbotRefreshCerts() {
   if (!el) return;
   const certs = d && d.certs ? d.certs : [];
   if (!certs.length) {
-    el.innerHTML = '<div style="color:var(--text3);font-family:monospace;font-size:12px">Aucun certificat dans /nginx/certs/live/</div>';
+    el.innerHTML = '<div style="color:var(--text3);font-family:monospace;font-size:12px">' + h(t('certbot.js.noCerts')) + '</div>';
     return;
   }
   el.innerHTML = '';
@@ -179,19 +172,19 @@ async function certbotRefreshCerts() {
     const cls       = daysLeft === null ? 'gy' : daysLeft < 0 ? 'rd' : daysLeft < 30 ? 'am' : 'gn';
     const exp       = c.notAfter ? new Date(c.notAfter).toLocaleDateString() : '?';
     const sans      = (c.domains || []).filter(function(dd) { return dd !== c.name; }).join(', ');
-    const daysLabel = daysLeft === null ? '?' : daysLeft < 0 ? 'EXPIRE' : daysLeft + 'j';
+    const daysLabel = daysLeft === null ? '?' : daysLeft < 0 ? t('certbot.js.expired') : t('certbot.js.daysShort', { n: daysLeft });
     const card = document.createElement('div');
     card.className = 'cb-cert-card';
     const row = document.createElement('div');
     row.className = 'row';
     const info = document.createElement('div');
     info.innerHTML = '<div class="cb-cert-domain">' + h(c.name) + '</div>'
-      + '<div class="cb-cert-meta">Expire : ' + h(exp)
+      + '<div class="cb-cert-meta">' + h(t('certbot.js.expires', { date: exp }))
       + ' <span class="badge ' + cls + '">' + h(daysLabel) + '</span></div>'
-      + (sans ? '<div class="cb-cert-sans">SANs : ' + h(sans) + '</div>' : '');
+      + (sans ? '<div class="cb-cert-sans">' + h(t('certbot.js.sans', { list: sans })) + '</div>' : '');
     const btn = document.createElement('button');
     btn.className = 'btn sm danger';
-    btn.textContent = 'Revoquer';
+    btn.textContent = t('certbot.js.revoke');
     btn.addEventListener('click', (function(name) {
       return function() { certbotRevoke(name); };
     })(c.name));
@@ -203,9 +196,9 @@ async function certbotRefreshCerts() {
 }
 
 async function certbotRevoke(domain) {
-  if (!confirm('Révoquer le certificat pour ' + domain + ' ?\nCette action est irréversible.')) return;
+  if (!confirm(t('certbot.js.confirmRevoke', { domain }))) return;
   const d = await api('/certbot/revoke', { method: 'POST', body: JSON.stringify({ domain }) }).catch(e => ({ error: e.message }));
-  if (d?.error) { alert('Erreur : ' + d.error); return; }
+  if (d?.error) { alert(t('certbot.js.error', { msg: d.error })); return; }
   await certbotRefreshCerts();
 }
 
@@ -237,50 +230,44 @@ async function cbdnsLoad() {
 async function cbdnsRefreshStatus() {
   const d = await api('/certbot-dns/status').catch(() => null);
   const el = document.getElementById('cbdns-container-status');
-  const bStart = document.getElementById('cbdns-container-start');
-  const bStop  = document.getElementById('cbdns-container-stop');
-  const bImg   = document.getElementById('cbdns-image-update');
   if (!d?.enabled || !el) return;
-  if (bImg) bImg.style.display = '';
   const c = d.container;
   if (!c?.exists) {
-    el.innerHTML = '<span class="cb-status-dot stopped"></span>Conteneur absent';
-    bStart.style.display = ''; bStop.style.display = 'none';
+    el.innerHTML = '<span class="cb-status-dot stopped"></span>' + h(t('certbot.js.absent'));
   } else if (c.running) {
-    el.innerHTML = '<span class="cb-status-dot running"></span>En cours — ' + h(c.image) +
-      (c.started ? ' (démarré ' + new Date(c.started).toLocaleString() + ')' : '');
-    bStart.style.display = 'none'; bStop.style.display = '';
+    el.innerHTML = '<span class="cb-status-dot running"></span>' + h(c.started
+      ? t('certbot.js.running', { image: c.image, started: new Date(c.started).toLocaleString() })
+      : t('certbot.js.runningNoDate', { image: c.image }));
   } else {
-    el.innerHTML = '<span class="cb-status-dot stopped"></span>Arrêté (' + h(c.status || '?') + ')';
-    bStart.style.display = ''; bStop.style.display = 'none';
+    el.innerHTML = '<span class="cb-status-dot stopped"></span>' + h(t('certbot.js.stopped', { status: c.status || '?' }));
   }
 }
 
 async function cbdnsContainerStart() {
-  document.getElementById('cbdns-container-status').innerHTML = '<span style="color:var(--text3)">Démarrage…</span>';
+  document.getElementById('cbdns-container-status').innerHTML = '<span style="color:var(--text3)">' + h(t('certbot.js.starting')) + '</span>';
   const d = await api('/certbot-dns/container/start', { method: 'POST' }).catch(e => ({ error: e.message }));
   if (d?.error) {
-    document.getElementById('cbdns-container-status').innerHTML = '<span style="color:var(--red)">Erreur : ' + h(d.error) + '</span>';
+    document.getElementById('cbdns-container-status').innerHTML = '<span style="color:var(--red)">' + h(t('certbot.js.error', { msg: d.error })) + '</span>';
     return;
   }
   await cbdnsRefreshStatus();
 }
 
 async function cbdnsContainerStop() {
-  if (!confirm('Arrêter le conteneur de renouvellement DNS ?')) return;
+  if (!confirm(t('certbot.js.confirmStopDns'))) return;
   await api('/certbot-dns/container/stop', { method: 'POST' }).catch(() => {});
   await cbdnsRefreshStatus();
 }
 
 async function cbdnsImageUpdate() {
   const btn = document.getElementById('cbdns-image-update');
-  if (btn) { btn.disabled = true; btn.textContent = 'Vérification…'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('certbot.js.checking'); }
   const d = await api('/certbot-dns/image/update', { method: 'POST' }).catch(e => ({ error: e.message }));
-  if (btn) { btn.disabled = false; btn.textContent = '⬇ Mettre à jour l\'image'; }
-  if (!d || d.error || d.ok === false) { alert('Erreur : ' + (d?.error || 'mise à jour impossible')); return; }
+  if (btn) { btn.disabled = false; btn.textContent = '⬇ ' + t('certbot.updateImage'); }
+  if (!d || d.error || d.ok === false) { alert(t('certbot.js.error', { msg: d?.error || t('certbot.js.updateFailed') })); return; }
   alert(d.updated
-    ? 'Nouvelle image téléchargée' + (d.recreated ? ', conteneur recréé.' : '.')
-    : 'Image déjà à jour.');
+    ? t('certbot.js.imgPulled') + (d.recreated ? t('certbot.js.imgRecreated') : '.')
+    : t('certbot.js.imgUpToDate'));
   await cbdnsRefreshStatus();
 }
 
@@ -300,22 +287,22 @@ async function cbdnsIssue() {
   const groups = cbdnsParseGroups();
   const warnEl = document.getElementById('cbdns-conflict-warn');
   warnEl.style.display = 'none';
-  if (!groups.length) { alert('Renseignez au moins une ligne de domaines.'); return; }
+  if (!groups.length) { alert(t('certbot.js.needLine')); return; }
 
   const btn = document.getElementById('cbdns-issue-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Génération…'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('certbot.js.generating'); }
   const d = await api('/certbot-dns/issue', {
     method: 'POST',
     body: JSON.stringify({ certificates: groups.map(domains => ({ domains })) }),
   }).catch(e => ({ error: e.message }));
-  if (btn) { btn.disabled = false; btn.textContent = '🔒 Générer'; }
+  if (btn) { btn.disabled = false; btn.textContent = t('certbot.generate'); }
 
   if (d?.error && d?.conflict) {
     warnEl.textContent = d.error;
     warnEl.style.display = '';
     return;
   }
-  if (d?.error && !d?.results) { alert('Erreur : ' + d.error); return; }
+  if (d?.error && !d?.results) { alert(t('certbot.js.error', { msg: d.error })); return; }
 
   const card = document.getElementById('cbdns-result-card');
   const log  = document.getElementById('cbdns-log');

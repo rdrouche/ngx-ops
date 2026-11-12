@@ -58,7 +58,7 @@ async function challengeOffendersLoad() {
     const tb = coTable(['ip', 'attempts', 'since', 'until', 'ua', 'action']);
     bans.forEach(b => {
       const tr = document.createElement('tr');
-      coCell(tr, b.ip, 'padding:4px 8px;font-family:monospace;color:var(--red)');
+      { const td = coCell(tr, b.ip, 'padding:4px 8px;font-family:monospace;color:var(--red)'); const x = window.NgxIp && NgxIp.badge(b.ip); if (x) td.append(' ', x); }
       coCell(tr, b.attempts + ' / ' + b.windowMinutes + ' min', 'padding:4px 8px');
       coCell(tr, coWhen(b.since), 'padding:4px 8px;white-space:nowrap');
       coCell(tr, coWhen(b.until), 'padding:4px 8px;white-space:nowrap');
@@ -88,7 +88,7 @@ async function challengeOffendersLoad() {
   list.forEach(o => {
     const tr = document.createElement('tr');
     const banned = o.bannedUntil && o.bannedUntil * 1000 > Date.now();
-    coCell(tr, o.ip + (banned ? ' ⛔' : ''), 'padding:4px 8px;font-family:monospace' + (banned ? ';color:var(--red)' : ''), banned ? t('challenge.off.bannedTip', { d: coWhen(o.bannedUntil) }) : '');
+    { const td = coCell(tr, o.ip + (banned ? ' ⛔' : ''), 'padding:4px 8px;font-family:monospace' + (banned ? ';color:var(--red)' : ''), banned ? t('challenge.off.bannedTip', { d: coWhen(o.bannedUntil) }) : ''); const x = window.NgxIp && NgxIp.badge(o.ip); if (x) td.append(' ', x); }
     coCell(tr, o.attempts, 'padding:4px 8px;font-weight:700');
     coCell(tr, o.redirected, 'padding:4px 8px');
     coCell(tr, o.pages, 'padding:4px 8px');

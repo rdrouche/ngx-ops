@@ -46,6 +46,18 @@ block_action: deny_403
 #       action: challenge
 # Si une IP est dans plusieurs listes, l'action la plus severe l'emporte (444 > 403 > challenge).
 
+# URL PUBLIQUE (sans API) de la liste — v12.75.0. Desactivee par defaut. Une fois activee, la liste
+# fusionnee (hors sources en action « challenge » et hors liste blanche) est servie en texte brut :
+#   https://<dashboard>/public/blocklist.txt                (public_token vide : accessible a tous)
+#   https://<dashboard>/public/<token>/blocklist.txt        (public_token defini : jeton dans l URL)
+#   .../public/<token>/blocklist/<source>.txt               (une source seule)
+# Consommable par curl, ipset, fail2ban ou un autre NGX Ops (source `type: url`). Limite : 60 requetes/min/IP.
+# Recommande : definir un jeton long et aleatoire (16 a 128 caracteres : lettres, chiffres, _ -),
+# par ex. `openssl rand -hex 24`, et l exposer derriere HTTPS.
+# public_enable: false
+# public_token: ""
+# public_sources: all          # all ou liste de noms de sources separes par des virgules
+
 # Journalisation dediee des hits (mesure d efficacite, recherche d IP par
 # liste, statistiques du Digest) — desactivee par defaut car elle ecrit un
 # fichier de log supplementaire. Deux methodes au choix, jamais imposees :

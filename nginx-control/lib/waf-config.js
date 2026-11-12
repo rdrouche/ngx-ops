@@ -15,6 +15,7 @@
  * > ANALYZER_DEFAULT_IMAGE ; le reste = waf.yml > valeur par defaut ci-dessous.
  * Le secret partage (X-WAF-Token) n'est PAS dans ce fichier : lib/waf-token.js.
  */
+const { validShipperUrl } = require('./shipper-url');
 const { stripInlineComment } = require('./simple-yaml');
 
 const DEFAULTS = Object.freeze({
@@ -30,6 +31,7 @@ const DEFAULTS = Object.freeze({
   wafLogPattern: '(^|[._-])wafemu\\.log$',
   crsVersion: 'v4.8.0',
   hitRetentionDays: 30,
+  shipperUrl: '',
 });
 
 // Points de montage figes cote conteneur (WAF-CONTRACT.md).
@@ -135,6 +137,11 @@ function normalizeWafConfig(text, env = {}) {
   }
   c.hitRetentionDays = intIn(y.hit_retention_days, DEFAULTS.hitRetentionDays, 1, 3650, errors, 'hit_retention_days');
 
+  if (y.shipper_url !== undefined && y.shipper_url !== '') {
+    if (validShipperUrl(y.shipper_url)) c.shipperUrl = y.shipper_url.replace(/\/+$/, '');
+    else errors.push('shipper_url : URL schema://hote:port attendue, sans chemin ni identifiants (http:// reserve a un hote local, un nom de service ou une IP privee)');
+  }
+
   const blockers = [];
   if (!c.enable) blockers.push('disabled');
   if (!c.acceptLimits) blockers.push('accept_limits');
@@ -148,9 +155,9 @@ function normalizeWafConfig(text, env = {}) {
 /**
  * Specification `POST /containers/create` du conteneur WAF. Pur.
  * @param {object} config   resultat de normalizeWafConfig().config
- * @param {{token:string, network:string, tz?:string}} opts
+ * @param {{token:string, network:string, tz?:string, shipperToken?:string}} opts
  */
-function buildContainerSpec(config, { token, network, tz } = {}) {
+function buildContainerSpec(config, { token, network, tz, shipperToken } = {}) {
   if (!token) throw new Error('jeton WAF absent');
   const env = [
     `PORT=${config.port}`,
@@ -164,6 +171,8 @@ function buildContainerSpec(config, { token, network, tz } = {}) {
     `HIT_RETENTION_DAYS=${config.hitRetentionDays}`,
   ];
   if (tz && /^[A-Za-z0-9_\/+-]{1,64}$/.test(tz)) env.push(`TZ=${tz}`);
+  // Envoi des hits vers le log store, via l'API locale du shipper : seulement si shipper_url est defini.
+  if (config.shipperUrl && shipperToken) env.push(`SHIPPER_URL=${config.shipperUrl}`, `SHIPPER_TOKEN=${shipperToken}`);
   return {
     Image: config.containerImage,
     Entrypoint: [ENTRYPOINT],
@@ -182,5 +191,5 @@ function buildContainerSpec(config, { token, network, tz } = {}) {
 }
 
 module.exports = {
-  DEFAULTS, MOUNTS, ENTRYPOINT, parseWafYaml, normalizeWafConfig, buildContainerSpec, validHostPath,
+  DEFAULTS, MOUNTS, ENTRYPOINT, parseWafYaml, normalizeWafConfig, buildContainerSpec, validHostPath, validShipperUrl,
 };

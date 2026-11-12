@@ -1,0 +1,40 @@
+# Option PostgreSQL :   WITH_PG=1 docker compose -f docker-compose.example.yml -f docker-compose.postgres.example.yml up -d --build
+# Prérequis : ./secrets/db_password (mot de passe, mode 600) ; storage.driver: postgres dans config/hub.yml
+# (ou HUB_DB_DRIVER=postgres). Le mot de passe n'est jamais dans le YAML ni dans l'environnement : secret Docker.
+services:
+  hub:
+    environment:
+      HUB_DB_DRIVER: postgres
+      HUB_DB_HOST: postgres
+      HUB_DB_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ngx-ops-hub-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nginx_ops_hub
+      POSTGRES_USER: hub
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes:
+      - hub_pg:/var/lib/postgresql/data
+    networks: [hub_net]          # aucun port publié : seul le Hub joint la base
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hub -d nginx_ops_hub"]
+      interval: 10s
+      timeout: 4s
+      retries: 5
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: ["no-new-privileges:true"]
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
+
+volumes:
+  hub_pg:

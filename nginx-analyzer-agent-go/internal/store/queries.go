@@ -1,5 +1,10 @@
 package store
 
+import (
+	"fmt"
+	"strings"
+)
+
 // HourlyMetric reproduit une ligne de hourlyMetrics().
 type HourlyMetric struct {
 	Hour     int64
@@ -296,26 +301,45 @@ type SeriesPoint struct {
 }
 
 // Series replique series() : serie temporelle a un grain donne, pour un graphe.
+//
+// Les grains fins ne disparaissent qu'une fois promus par Rollup (minutes > 24 h
+// -> heures, heures > 30 j -> jours) : sur une fenetre recente, il n'existe donc
+// AUCUNE ligne au grain "hour" (#66). Un grain demande agrege par consequent
+// aussi les grains plus fins (sans chevauchement : le rollup supprime les lignes
+// qu'il promeut), regroupes sur le pas demande.
 func (s *Store) Series(grain string, fromMs, toMs int64, vhost string) []SeriesPoint {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.db == nil {
 		return nil
 	}
+	grains, step := "'"+strings.ReplaceAll(grain, "'", "")+"'", int64(0)
+	switch grain {
+	case "hour":
+		grains, step = "'minute','hour'", 3600
+	case "day":
+		grains, step = "'minute','hour','day'", 86400
+	}
+	from, to := floorDiv1000(fromMs), floorDiv1000(toMs)
+	bucketExpr := "bucket"
+	if step > 0 {
+		from = from / step * step // premiere tranche entiere
+		bucketExpr = fmt.Sprintf("(bucket / %d) * %d", step, step)
+	}
 	where := ""
-	args := []any{grain, floorDiv1000(fromMs), floorDiv1000(toMs)}
+	args := []any{from, to}
 	if vhost != "" {
 		where = "AND vhost = ?"
 		args = append(args, vhost)
 	}
 	rows, err := s.db.Query(`
-		SELECT bucket,
+		SELECT `+bucketExpr+` AS b,
 		       SUM(requests) AS requests,
 		       SUM(bytes)    AS bytes,
 		       SUM(CASE WHEN status >= 4 THEN requests ELSE 0 END) AS errors
 		FROM traffic
-		WHERE grain = ? AND bucket >= ? AND bucket < ? `+where+`
-		GROUP BY bucket ORDER BY bucket
+		WHERE grain IN (`+grains+`) AND bucket >= ? AND bucket < ? `+where+`
+		GROUP BY b ORDER BY b
 	`, args...)
 	if err != nil {
 		return nil

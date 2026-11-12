@@ -30,7 +30,15 @@ async function anLoad() {
   const clearBtn = document.getElementById('an-clear-all');
   if (clearBtn) clearBtn.style.display = hasPerm('manage_users') ? '' : 'none';
   const imgName = document.getElementById('an-image-name');
-  if (imgName) imgName.textContent = cfg.image || 'forge.rdr-it.com/dockerfiles/nginx-analyzer:latest';
+  if (imgName) imgName.textContent = cfg.image || 'forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:latest';
+  // #80 : l'image Node de l'analyseur n'est plus maintenue ; avertissement non bloquant.
+  if (imgName && cfg.legacyNodeImage && !document.getElementById('an-legacy-node')) {
+    const w = document.createElement('div');
+    w.id = 'an-legacy-node'; w.className = 'nf-warn'; w.setAttribute('role', 'alert');
+    w.textContent = t('analyzer.legacyNode');
+    const st = document.getElementById('an-status');
+    if (st) st.before(w);
+  }
   await anRefreshStatus();
   await anLoadAlerts();
   await anLoadExceptions();
@@ -124,11 +132,7 @@ async function anLoadBotStats() {
 async function anRefreshStatus() {
   const d = await api('/analyzer/status').catch(() => null);
   const el = document.getElementById('an-status');
-  const bStart = document.getElementById('an-btn-start');
-  const bStop  = document.getElementById('an-btn-stop');
-  const bImg   = document.getElementById('an-image-update');
   if (!d || !d.enabled || !el) return;
-  if (bImg) bImg.style.display = '';
 
   const c = d.container || {};
   el.innerHTML = '';
@@ -165,8 +169,6 @@ async function anRefreshStatus() {
     el.appendChild(warn);
   }
 
-  bStart.style.display = c.running ? 'none' : '';
-  bStop.style.display  = c.running ? '' : 'none';
 
   const a = d.agent;
   const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
@@ -376,6 +378,7 @@ async function anLoadExceptions() {
     ip.style.minWidth = '130px';
     ip.style.color = 'var(--text)';
     ip.textContent = e.ip;
+    { const b = window.NgxIp && NgxIp.badge(e.ip); if (b) { ip.append(' ', b); } }
     row.appendChild(ip);
 
     const reason = document.createElement('span');
@@ -481,6 +484,7 @@ function anAlertCard(a) {
     s.textContent = p;
     meta.appendChild(s);
   }
+  { const b = a.ip && window.NgxIp && NgxIp.badge(a.ip); if (b) meta.appendChild(b); }
   card.appendChild(meta);
 
   // Pourquoi cette alerte : un verdict sans motif se fait ignorer, ou pire,

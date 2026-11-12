@@ -3,7 +3,8 @@
 // Un DELETE ne reduit pas le fichier (pages libres reutilisables seulement).
 //   - compactIfNeeded(db, opts) : au demarrage, VACUUM si la part de pages libres depasse les seuils
 //     (bascule aussi la base en auto_vacuum=INCREMENTAL, applique par le VACUUM).
-//   - maintain(db) : periodique, checkpoint WAL (TRUNCATE) + incremental_vacuum (rapide, non bloquant longtemps).
+//   - maintain(db) : periodique, checkpoint WAL (TRUNCATE) + PRAGMA optimize + incremental_vacuum (rapide, non
+//     bloquant longtemps) + controle quick_check (#100).
 // Mode DB_COMPACT_ON_START : auto (defaut, seuils) | always | off.
 
 const fs = require('fs');
@@ -51,12 +52,19 @@ function compactIfNeeded(db, { mode = 'auto', minFreeMb = 16, minFreePct = 20, l
 }
 
 /** Entretien leger periodique. */
-function maintain(db, { pages = 2000 } = {}) {
+function maintain(db, { pages = 2000, label = 'db', log = console.warn } = {}) {
   try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch {}
+  try { db.exec('PRAGMA optimize'); } catch {} // statistiques du planificateur a jour
   try {
     if (freeStats(db).autoVacuum === 2) db.exec(`PRAGMA incremental_vacuum(${Math.max(1, pages | 0)})`);
   } catch {}
-  return freeStats(db);
+  const st = freeStats(db);
+  try {
+    const r = db.prepare('PRAGMA quick_check').get() || {};
+    st.integrity = String(r.quick_check) === 'ok' ? 'ok' : 'failed';
+    if (st.integrity !== 'ok') log(`[db] ${label}: quick_check en echec : ${String(r.quick_check).slice(0, 200)}`);
+  } catch { st.integrity = 'unknown'; }
+  return st;
 }
 
 /** Taille des fichiers .db/-wal/-shm d une base (pour affichage). */
@@ -76,7 +84,8 @@ function register(db, label, cfg) {
       mode: cfg.DB_COMPACT_ON_START, minFreeMb: cfg.DB_COMPACT_MIN_FREE_MB,
       minFreePct: cfg.DB_COMPACT_MIN_FREE_PCT, label,
     });
-    const t = setInterval(() => { try { maintain(db); } catch {} }, 6 * 3_600_000);
+    try { db.exec('PRAGMA optimize'); } catch {}
+    const t = setInterval(() => { try { maintain(db, { label }); } catch {} }, 6 * 3_600_000);
     if (t.unref) t.unref();
   } catch (e) { console.warn(`[db] ${label}: maintenance indisponible:`, e.message); }
 }

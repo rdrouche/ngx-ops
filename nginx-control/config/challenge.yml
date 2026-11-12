@@ -10,6 +10,12 @@
 # challenge_upstream: ""             # défaut : nginx-challenge:8080 / anubis:8923
 # challenge_resolver: 127.0.0.11     # DNS Docker
 # challenge_exempt_path_regex: '^/[.]well-known/'
+# challenge_whitelist:               # v12.75.0 : IP / CIDR JAMAIS soumises au challenge (tous modes, tous vhosts)
+#   - 203.0.113.10
+#   - 198.51.100.0/24
+#   - 2001:db8::/32
+# challenge_fail_open: false          # true = si le conteneur du challenge est injoignable/en erreur, les requêtes PASSENT sans challenge
+#                                    # (site disponible mais non protégé) ; false (défaut) = erreur 5xx tant qu'il est arrêté
 # challenge_exempt_ua_regex: ""       # ex. '^NGXOps$' (User-Agent des requêtes sortantes de NGX Ops)
 #
 # ── profils par vhost ──────────────────────────────────────────────────────
@@ -49,3 +55,9 @@
 # anubis_difficulty: 4              # 1–8 (anubis)
 # redirect_domains: ""              # anubis : domaines de redirection autorisés
 # cookie_domain: ""                 # anubis : domaine du cookie
+#
+# Journal centralisé (log store, facultatif, moteur builtin) : adresse de l'API LOCALE du shipper. Le challenge y
+# envoie ses DÉCISIONS (réussi, échoué, limité, blocage automatique, redirection au plus 1/min/IP) ; pas les requêtes
+# laissées passer par cookie. Vide = aucun envoi. Jeton : SHIPPER_LOCAL_TOKEN (voir waf.yml). Pris en compte à la
+# (re)création du conteneur. http:// uniquement vers un nom de service Docker, une boucle locale ou une IP privée.
+# shipper_url: http://ngx-shipper:9181

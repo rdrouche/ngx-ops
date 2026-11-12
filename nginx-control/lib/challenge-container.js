@@ -14,6 +14,7 @@
  */
 
 const { stripInlineComment } = require('./simple-yaml');
+const { validShipperUrl } = require('./shipper-url');
 
 const DEFAULT_PORT = { builtin: 8080, anubis: 8923 };
 const IMAGE_RE = /^[A-Za-z0-9][A-Za-z0-9._\/:@-]{0,200}$/;
@@ -28,6 +29,8 @@ const DEFAULTS = Object.freeze({
   anubisDifficulty: 4, redirectDomains: '', cookieDomain: '',
   // v12.73.0 : analyse des IP en echec et blocage automatique (moteur builtin)
   autoblock: false, autoblockThreshold: 30, autoblockWindowMinutes: 60, autoblockHours: 24, offendersHours: 24,
+  // v12.79.0 : journal centralise (log store) via l API locale du shipper ; vide = aucun envoi
+  shipperUrl: '',
 });
 
 function parseScalar(raw) {
@@ -86,6 +89,10 @@ function parseChallengeConfig(text) {
   int('autoblock_hours', 'autoblockHours', 1, 720);
   int('offenders_hours', 'offendersHours', 1, 168);
   int('anubis_difficulty', 'anubisDifficulty', 1, 8);
+  if (raw.shipper_url) {
+    if (validShipperUrl(raw.shipper_url)) c.shipperUrl = raw.shipper_url.replace(/\/+$/, '');
+    else errors.push('shipper_url : URL schema://hote:port attendue, sans chemin ni identifiants (http:// reserve a un hote local, un nom de service ou une IP privee)');
+  }
   str('redirect_domains', 'redirectDomains', DOMAINS_RE, 'liste de domaines séparés par des virgules');
   str('cookie_domain', 'cookieDomain', HOST_RE, 'nom de domaine invalide');
   return { config: c, errors };
@@ -133,7 +140,7 @@ function imageFor(config, engine, defaults) {
  * Durcissement : aucun port publié, toutes les capacités retirées, pas de
  * nouveaux privilèges, mémoire et nombre de processus bornés.
  */
-function buildContainerSpec({ engine, image, network, upstream, config, secret }) {
+function buildContainerSpec({ engine, image, network, upstream, config, secret, shipperToken }) {
   const port = portFor(upstream, engine);
   let env;
   if (engine === 'anubis') {
@@ -152,6 +159,9 @@ function buildContainerSpec({ engine, image, network, upstream, config, secret }
     env.push(`NC_AUTOBLOCK=${config.autoblock ? 'true' : 'false'}`, `NC_AUTOBLOCK_THRESHOLD=${config.autoblockThreshold}`,
       `NC_AUTOBLOCK_WINDOW_MIN=${config.autoblockWindowMinutes}`, `NC_AUTOBLOCK_HOURS=${config.autoblockHours}`,
       `NC_OFFENDERS_HOURS=${config.offendersHours}`);
+    env.push(...require('./redis-env').challengeEnv()); // v12.78.0 : Redis optionnel
+    // v12.79.0 : decisions vers le log store, seulement si shipper_url est defini ET le jeton fourni (moteur builtin).
+    if (config.shipperUrl && shipperToken) env.push(`NC_SHIPPER_URL=${config.shipperUrl}`, `NC_SHIPPER_TOKEN=${shipperToken}`);
   }
   return {
     Image: image,

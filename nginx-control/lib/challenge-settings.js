@@ -44,6 +44,21 @@ function parseProfiles(text) {
   return out;
 }
 
+/** Lit la liste `challenge_whitelist:` (items `  - 203.0.113.0/24`). */
+function parseWhitelist(text) {
+  const out = [];
+  let inList = false, found = false;
+  for (const line of String(text || '').split('\n')) {
+    const l = line.replace(/\r$/, '');
+    if (!l.trim() || l.trim().startsWith('#')) continue;
+    if (/^challenge_whitelist\s*:\s*$/.test(l)) { inList = true; found = true; continue; }
+    if (/^[A-Za-z_]+\s*:/.test(l)) { inList = false; continue; }
+    const m = inList && l.match(/^\s+-\s+(.*)$/);
+    if (m) out.push(stripInlineComment(m[1]).replace(/^["']|["']$/g, ''));
+  }
+  return found ? out : null;
+}
+
 /** @returns {object} clés challenge_* (valeurs typées) + challenge_profiles (liste brute) */
 function challengeOverridesFromText(text) {
   const { config } = parseBlocklistYaml(text);
@@ -51,6 +66,8 @@ function challengeOverridesFromText(text) {
   for (const [k, v] of Object.entries(config)) if (/^challenge_/.test(k)) out[k] = v;
   const profiles = parseProfiles(text);
   if (profiles.length) out.challenge_profiles = profiles;
+  const wl = parseWhitelist(text);
+  if (wl) out.challenge_whitelist = wl;
   return out;
 }
 

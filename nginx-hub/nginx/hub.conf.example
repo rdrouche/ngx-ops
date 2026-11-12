@@ -1,0 +1,71 @@
+# EXEMPLE de vhost nginx pour NGX Ops Hub (adapter noms, certificats et réseau).
+# Le Hub n'écoute qu'en HTTP local ; nginx termine le TLS, ajoute HSTS et limite les abus.
+
+limit_req_zone $binary_remote_addr zone=hub_auth:10m rate=10r/m;
+
+server {
+    listen 80;
+    server_name hub.exemple.org;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name hub.exemple.org;
+
+    ssl_certificate     /etc/nginx/ssl/hub.exemple.org.cer;
+    ssl_certificate_key /etc/nginx/ssl/hub.exemple.org.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Option recommandée : restreindre l'accès à un réseau d'administration / VPN
+    # allow 203.0.113.0/24;
+    # deny  all;
+
+    client_max_body_size 64k;
+    server_tokens off;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Anti brute-force supplémentaire sur la connexion (le Hub applique aussi ses propres limites)
+    # Envoi d'archives de sauvegarde par les dashboards (push) : corps volumineux, streamé sans mise en tampon.
+    # Aligner client_max_body_size sur backups.max_archive_mb (+ marge). Restreindre l'accès aux IP des dashboards si possible.
+    location = /api/hub/v1/backups {
+        client_max_body_size 300m;
+        client_body_timeout 300s;
+        proxy_request_buffering off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        limit_req zone=hub_auth burst=5 nodelay;
+        proxy_pass http://127.0.0.1:8090;
+        include /etc/nginx/conf.d/hub-proxy.inc;
+    }
+
+    # Téléchargement d'archives (admin) : réponse volumineuse
+    location ~ ^/api/hub/v1/backups/[^/]+/download$ {
+        proxy_buffering off;
+        proxy_read_timeout 600s;
+        proxy_pass http://127.0.0.1:8090;
+        include /etc/nginx/conf.d/hub-proxy.inc;
+    }
+
+    location /api/hub/v1/auth/ {
+        limit_req zone=hub_auth burst=10 nodelay;
+        proxy_pass http://127.0.0.1:8090;
+        include /etc/nginx/conf.d/hub-proxy.inc;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        include /etc/nginx/conf.d/hub-proxy.inc;
+    }
+}
+
+# --- /etc/nginx/conf.d/hub-proxy.inc ---
+# proxy_http_version 1.1;
+# proxy_set_header Host              $host;
+# proxy_set_header X-Real-IP         $remote_addr;   # le Hub n'accepte cet en-tête que depuis trusted_proxies
+# proxy_set_header X-Forwarded-Proto $scheme;
+# proxy_set_header Connection        "";
+# proxy_redirect off;
+# proxy_read_timeout 30s;

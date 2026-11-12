@@ -251,7 +251,52 @@ function checkDomainConflict(domain, opts = {}) {
   }
   return { conflict: false };
 }
+
+/**
+ * Cherche un certificat NON expiré couvrant TOUS les noms demandés dans les trois
+ * sources connues, dans cet ordre : Let's Encrypt `live/` (certbot), `synced/`
+ * (certificats reçus par la synchro) puis le dossier `ssl/` (certificats manuels,
+ * appariés à leur clé `<nom>.key`). Renvoie les chemins TELS QUE NGINX LES VOIT
+ * (`/etc/letsencrypt/...`, `/ssl/...`), ou `{ found: false }`.
+ *
+ * Sert aux modes `auto` / `certbot_*` des vhosts générés (Docker, agents) : un
+ * certificat déjà présent — même wildcard, même déposé à la main — évite de
+ * rester en HTTP simple et de déclencher une émission inutile.
+ */
+function findUsableCertificate(names) {
+  const list = (Array.isArray(names) ? names : [names]).map(n => String(n || '').toLowerCase()).filter(Boolean);
+  if (!list.length) return { found: false };
+  const covers = (sans, name) => sans.some(d => d === name || (d.startsWith('*.') && wildcardCovers(d.slice(2), name)));
+  const ok = (c, sans) => c && !c.expired && !c.error && sans.length && list.every(n => covers(sans, n));
+  const lower = (a) => (a || []).map(x => String(x).toLowerCase());
+  const exists = (f) => { try { return fs.statSync(f).isFile(); } catch { return false; } };
+
+  // 1. certbot live/ (comportement historique de checkDomainConflict)
+  const live = checkDomainConflict(list[0], { allNames: list });
+  if (live.conflict) {
+    return { found: true, source: 'live', name: live.cert, match: live.match,
+      certPath: `/etc/letsencrypt/live/${live.cert}/fullchain.pem`, keyPath: `/etc/letsencrypt/live/${live.cert}/privkey.pem` };
+  }
+  // 2. synced/
+  for (const c of scanSyncedDir(DIR_CERTS)) {
+    if (!ok(c, lower(c.sans))) continue;
+    if (!exists(path.join(DIR_CERTS, 'synced', c.domain, 'privkey.pem'))) continue;
+    return { found: true, source: 'synced', name: c.domain,
+      certPath: `/etc/letsencrypt/synced/${c.domain}/fullchain.pem`, keyPath: `/etc/letsencrypt/synced/${c.domain}/privkey.pem` };
+  }
+  // 3. ssl/ (manuel) : le certificat doit avoir sa clé à côté
+  const files = safeReadDir(DIR_SSL);
+  for (const c of scanSslDir(DIR_SSL)) {
+    if (!ok(c, lower(c.sans))) continue;
+    const base = c.name.replace(/\.(cer|crt|pem)$/i, '');
+    const keyFile = files.find(f => f === base + '.key' || f === base + '.pem.key');
+    if (!keyFile) continue;
+    return { found: true, source: 'ssl', name: c.name, certPath: `/ssl/${c.name}`, keyPath: `/ssl/${keyFile}` };
+  }
+  return { found: false };
+}
 module.exports = {
+  findUsableCertificate,
   parseCert, parseCertSANs, adaptiveThreshold,
   scanSslDir, scanCertsDir, scanSyncedDir, getAllCertificates,
   listExistingCerts, checkDomainConflict,

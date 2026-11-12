@@ -40,7 +40,7 @@ const int = (name, fallback) => {
 // ne sert qu en dehors d un conteneur construit par ce Dockerfile (tests
 // locaux, `node server.js` execute directement) — l ARG du Dockerfile a lui
 // meme deja son propre defaut ("dev") pour un build sans --build-arg.
-const VERSION = str('APP_VERSION', '12.74.0');
+const VERSION = str('APP_VERSION', '12.81.0');
 
 // ─── Core ────────────────────────────────────────────────────────────────────
 const PORT            = int('PORT', 3000);
@@ -335,21 +335,31 @@ const GODNS_IP_CHECK_URLS = str('GODNS_IP_CHECK_URLS',
 // L image par defaut de l analyzer, utilisee quand analyzer.yml ne definit pas
 // container_image. Contrairement aux autres conteneurs geres (certbot,
 // geoipupdate, error-pages...), qui pointent tous vers une image publique
-// tierce, l analyzer est une image maison (voir nginx-analyzer/) — quelqu un
+// tierce, l analyzer est une image maison (voir nginx-analyzer-go/) — quelqu un
 // qui build sa propre image sous un autre nom/registre doit pouvoir changer
 // ce defaut sans toucher a analyzer.yml. Injecte via ARG/ENV dans le
 // Dockerfile pour etre configurable au moment du build (--build-arg), tout en
 // restant surchargeable a l execution comme n importe quelle autre variable.
-const ANALYZER_DEFAULT_IMAGE = str('ANALYZER_DEFAULT_IMAGE', 'forge.rdr-it.com/dockerfiles/nginx-analyzer:latest');
+const ANALYZER_DEFAULT_IMAGE = str('ANALYZER_DEFAULT_IMAGE', 'forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:latest');
 // Image de l'agent Go distant (nginx-agent : autorisation Docker / reverse proxy distant), utilisee par
 // le kit de deploiement (.env + compose.yml) des agents. Meme mecanisme que les images ci-dessus : fixee
 // au build (ARG/ENV du Dockerfile), surchargeable a l'execution. Nom sans tag ; un nom invalide retombe
 // sur le defaut. `||` : une variable vide (compose `${AGENT_DEFAULT_IMAGE:-}`) retombe aussi sur le defaut.
 const AGENT_IMAGE_FALLBACK = 'forge.rdr-it.com/dockerfiles/nginx-control-agent';
-const AGENT_DEFAULT_IMAGE = (() => {
+// Accepte aussi `nom:tag` (ex. `forge.exemple.fr/agent:1.2`) : le tag est alors extrait et devient le tag
+// par defaut du kit (AGENT_DEFAULT_TAG) — avant, une valeur avec tag etait rejetee en silence (retour au defaut).
+const AGENT_IMAGE_PARTS = (() => {
   const v = str('AGENT_DEFAULT_IMAGE');
-  return v && /^[a-z0-9][a-z0-9._\/-]{0,200}$/i.test(v) ? v : AGENT_IMAGE_FALLBACK;
+  if (!v) return { image: AGENT_IMAGE_FALLBACK, tag: 'latest' };
+  const i = v.lastIndexOf(':');
+  const hasTag = i > v.lastIndexOf('/');
+  const image = hasTag ? v.slice(0, i) : v;
+  const tag = hasTag ? v.slice(i + 1) : 'latest';
+  return /^[a-z0-9][a-z0-9._\/-]{0,200}$/i.test(image) && /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(tag)
+    ? { image, tag } : { image: AGENT_IMAGE_FALLBACK, tag: 'latest' };
 })();
+const AGENT_DEFAULT_IMAGE = AGENT_IMAGE_PARTS.image;
+const AGENT_DEFAULT_TAG = AGENT_IMAGE_PARTS.tag;
 const EVENTS_DB_PATH    = path.join(CONFIG_DIR, 'events.db');
 const EVENTS_RETENTION_DAYS = int('EVENTS_RETENTION_DAYS', 30);
 
@@ -461,6 +471,17 @@ const WAF_CONFIG_FILE = path.join(CONFIG_DIR, 'waf.yml');
 // `||` et non un repli de str() : une variable vide (compose `${WAF_DEFAULT_IMAGE:-}`) doit retomber sur l'analyseur.
 const WAF_DEFAULT_IMAGE = str('WAF_DEFAULT_IMAGE') || ANALYZER_DEFAULT_IMAGE;
 const WAF_TOKEN = str('WAF_TOKEN');
+// Jeton local du shipper (log store) : partage dashboard <-> conteneur shipper <-> WAF emule (lib/shipper-token.js).
+// >= 24 caracteres ; absent -> genere une fois et conserve dans .generated-secrets.json.
+const SHIPPER_LOCAL_TOKEN = str('SHIPPER_LOCAL_TOKEN');
+// Journal centralise (v12.80.0) : config/logstore.yml (lecture du log store + conteneur shipper).
+// LOGSTORE_READ_TOKEN : jeton `read` du log store ; LOGSINK_TOKEN : jeton `write` de CETTE instance (envoi par le
+// shipper). Prioritaires sur le yml (un secret vaut mieux en ENV). SHIPPER_DEFAULT_IMAGE : image du shipper
+// (3e binaire de l analyseur) ; vide -> image de l analyseur.
+const LOGSTORE_CONFIG_FILE = path.join(CONFIG_DIR, 'logstore.yml');
+const LOGSTORE_READ_TOKEN = str('LOGSTORE_READ_TOKEN');
+const LOGSINK_TOKEN = str('LOGSINK_TOKEN');
+const SHIPPER_DEFAULT_IMAGE = str('SHIPPER_DEFAULT_IMAGE') || ANALYZER_DEFAULT_IMAGE;
 const CHALLENGE_DEFAULT_IMAGE = str('CHALLENGE_DEFAULT_IMAGE', 'forge.rdr-it.com/dockerfiles/nginx-challenge:latest');
 // User-Agent de TOUTES les requetes HTTP sortantes de NGX Ops (listes, depots,
 // webhooks, LAPI, hotes distants, git...) : un seul nom, sans version, pour pouvoir
@@ -602,7 +623,7 @@ module.exports = Object.freeze({
   DIR_SITES, DIR_CONF, DIR_SNIPPETS, DIR_STREAMS, DIR_SSL, DIR_CERTS, DIR_LOGS,
   DIR_CACHE, DIR_BACKUPS, DIR_GIT_WORK, HOST_LOGS, HOST_GOACCESS,
   GIT_REPO_URL, GIT_BRANCH, GIT_BACKUP_BRANCH, GIT_SSH_KEY, GIT_TOKEN,
-  GIT_USER_NAME, GIT_USER_EMAIL, GIT_CONFIG_FILE, BLOCKLIST_CONFIG_FILE, DEPLOY_TOKENS_FILE, CHALLENGE_CONFIG_FILE, INTELLIGENCE_CONFIG_FILE, INTELLIGENCE_STATE_FILE, INTEL_API_URL, INTEL_TOKEN, WAF_CONFIG_FILE, WAF_DEFAULT_IMAGE, AGENT_DEFAULT_IMAGE, WAF_TOKEN, CHALLENGE_DEFAULT_IMAGE, ANUBIS_DEFAULT_IMAGE, HTTP_USER_AGENT,
+  GIT_USER_NAME, GIT_USER_EMAIL, GIT_CONFIG_FILE, BLOCKLIST_CONFIG_FILE, DEPLOY_TOKENS_FILE, CHALLENGE_CONFIG_FILE, INTELLIGENCE_CONFIG_FILE, INTELLIGENCE_STATE_FILE, INTEL_API_URL, INTEL_TOKEN, WAF_CONFIG_FILE, WAF_DEFAULT_IMAGE, AGENT_DEFAULT_IMAGE, AGENT_DEFAULT_TAG, WAF_TOKEN, SHIPPER_LOCAL_TOKEN, LOGSTORE_CONFIG_FILE, LOGSTORE_READ_TOKEN, LOGSINK_TOKEN, SHIPPER_DEFAULT_IMAGE, CHALLENGE_DEFAULT_IMAGE, ANUBIS_DEFAULT_IMAGE, HTTP_USER_AGENT,
   NC_SECRET, NC_DIFFICULTY_BITS, NC_COOKIE_HOURS, NC_GOODBOTS, NC_GOODBOTS_EXTRA, NC_LANG,
   DOCKER_AUTOCONFIG_CONFIG_FILE, AGENTS_CONFIG_FILE, BACKUP_KEEP,
   ALLOW_EDIT, ALLOW_CREATE, DEPLOY_SYNC_SSL,

@@ -52,6 +52,7 @@ type usedSet struct {
 	mu  sync.Mutex
 	m   map[string]time.Time
 	cap int
+	ver uint64
 	now func() time.Time
 }
 
@@ -76,5 +77,6 @@ func (u *usedSet) add(id string, until time.Time) bool {
 		}
 	}
 	u.m[id] = until
+	u.ver++
 	return true
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -24,8 +25,10 @@ import (
 
 	"nginx-analyzer-go/internal/app"
 	"nginx-analyzer-go/internal/config"
+	"nginx-analyzer-go/internal/decisions"
 	"nginx-analyzer-go/internal/geoip"
 	"nginx-analyzer-go/internal/httpapi"
+	"nginx-analyzer-go/internal/store"
 )
 
 // defaultGCPercent : compromis RAM/CPU mesure sur une charge extreme (300 000
@@ -42,6 +45,21 @@ func main() {
 	cfg := config.Load()
 	log.Printf("[nginx-analyzer] demarrage (%s/%s, %s)", runtime.GOOS, runtime.GOARCH, runtime.Version())
 	a := app.New(cfg)
+
+	// #110 : un événement `analysis` par alerte créée, via l'API locale du shipper (SHIPPER_URL vide = désactivé).
+	dec, derr := decisions.New(decisions.Config{URL: os.Getenv("SHIPPER_URL"), Token: os.Getenv("SHIPPER_TOKEN"), Logger: slog.Default()})
+	if derr != nil {
+		log.Printf("[nginx-analyzer] envoi des verdicts au log store désactivé : %v", derr)
+	}
+	decCtx, decStop := context.WithCancel(context.Background())
+	decDone := make(chan struct{})
+	if dec != nil {
+		a.Store.SetAlertHook(func(al store.Alert) { dec.Emit(app.AlertEvent(al)) })
+		go func() { dec.Run(decCtx); close(decDone) }()
+		log.Printf("[nginx-analyzer] verdicts envoyés au shipper local")
+	} else {
+		close(decDone)
+	}
 
 	stop := make(chan struct{})
 	a.StartBackgroundLoops(stop)
@@ -96,6 +114,11 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
+	decStop() // vide la file des verdicts (bornée) avant de quitter
+	select {
+	case <-decDone:
+	case <-time.After(3 * time.Second):
+	}
 	a.Close()
 	os.Exit(0)
 }

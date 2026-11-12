@@ -40,6 +40,25 @@ import (
 //	nginx-control.publish=dmz,lan                          (multi-master, defaut: toutes les cibles — voir targets.go/README.md)
 const labelPrefix = "nginx-control."
 
+// labelPrefixNew is accepted in parallel (migration): "ngx-ops.x" is the same label as
+// "nginx-control.x". When both are set for the same key, "ngx-ops." wins.
+const labelPrefixNew = "ngx-ops."
+
+func normalizeLabels(labels map[string]string) map[string]string {
+	out := make(map[string]string, len(labels))
+	for k, v := range labels {
+		if !strings.HasPrefix(k, labelPrefixNew) {
+			out[k] = v
+		}
+	}
+	for k, v := range labels {
+		if strings.HasPrefix(k, labelPrefixNew) {
+			out[labelPrefix+strings.TrimPrefix(k, labelPrefixNew)] = v
+		}
+	}
+	return out
+}
+
 var locationKeyRE = regexp.MustCompile(`^nginx-control\.vhost\.location(\d+)$`)
 
 // Fix (audit report, Basse/"Agent Go"): only the literal "true" (any case)
@@ -147,6 +166,7 @@ func numberedSnippets(labels map[string]string, prefix string) []string {
 // if this container does not opt in (nginx-control.enable != true) or
 // declares no usable location.
 func vhostFromLabels(labels map[string]string) (*VhostSpec, []string, bool) {
+	labels = normalizeLabels(labels)
 	if !boolLabel(labels, labelPrefix+"enable", false) {
 		return nil, nil, false
 	}

@@ -28,22 +28,19 @@ async function geoipupdateLoad() {
 async function geoipupdateRefreshStatus() {
   const d = await api('/geoipupdate/status').catch(() => null);
   const el       = document.getElementById('gi-status');
-  const btnStart = document.getElementById('gi-start');
-  const btnStop  = document.getElementById('gi-stop');
   const btnNow   = document.getElementById('gi-update-now');
-  const btnImg   = document.getElementById('gi-image-update');
   if (!d?.enabled || !el) return;
   const c = d.container;
   if (!c?.exists) {
     el.innerHTML = '<span class="cb-status-dot stopped"></span>' + t('godns.containerAbsent');
-    btnStart.style.display = ''; btnStop.style.display = 'none'; btnNow.style.display = 'none'; btnImg.style.display = '';
+    btnNow.style.display = 'none';
   } else if (c.running) {
     el.innerHTML = '<span class="cb-status-dot running"></span>' + t('godns.running', { image: h(c.image) }) +
       (c.started ? t('geoip.startedAt', { date: new Date(c.started).toLocaleString('fr-FR') }) : '');
-    btnStart.style.display = 'none'; btnStop.style.display = ''; btnNow.style.display = ''; btnImg.style.display = '';
+    btnNow.style.display = '';
   } else {
     el.innerHTML = '<span class="cb-status-dot stopped"></span>' + t('godns.stopped') + ' (' + h(c.status || '?') + ')';
-    btnStart.style.display = ''; btnStop.style.display = 'none'; btnNow.style.display = ''; btnImg.style.display = '';
+    btnNow.style.display = '';
   }
 
   const tbody = document.getElementById('gi-databases');

@@ -28,11 +28,14 @@ const cfg     = require('../lib/config');
 const httpLib = require('../lib/http');
 const auth    = require('../lib/auth');
 const docker  = require('../lib/docker');
+const lifecycle = require('../lib/container-lifecycle');
 const notify  = require('../lib/notify');
 const events  = require('../lib/events');
 const { pushNotification } = require('../lib/notifications');
 const { listVhostTargets } = require('../lib/vhost-targets');
 const { getAnalyzerToken } = require('../lib/analyzer-token');
+const { getShipperToken } = require('../lib/shipper-token');
+const { isLegacyNodeImage } = require('../lib/analyzer-image');
 
 const { DIR_SITES, DIR_CONF } = cfg;
 const UPSTREAM_DIRS = [DIR_CONF, DIR_SITES];
@@ -163,6 +166,11 @@ async function startAnalyzer(c) {
     `DATA_SIGMA_THRESHOLD=${c.data_sigma_threshold ?? 6}`,
     `DATA_MIN_BYTES=${c.data_min_bytes ?? 52428800}`,
     `DB_COMPACT_ON_START=${/^(auto|always|off)$/.test(String(c.db_compact_on_start)) ? c.db_compact_on_start : 'auto'}`,
+    // v12.78.0 : Redis optionnel (heures en cours + blocklists conservees apres redemarrage).
+    ...require('../lib/redis-env').analyzerEnv(),
+    // #110 : verdicts de l'analyseur (alertes) vers le log store, via l'API locale du shipper ; absent = aucun envoi
+    ...(c.shipper_url && require('../lib/shipper-url').validShipperUrl(String(c.shipper_url)) && getShipperToken()
+      ? [`SHIPPER_URL=${String(c.shipper_url).replace(/\/+$/, '')}`, `SHIPPER_TOKEN=${getShipperToken()}`] : []),
   ];
 
   const create = await dockerCall('POST', `/containers/create?name=${encodeURIComponent(name)}`, {
@@ -283,13 +291,13 @@ function analyzerApi(pathAndQuery, method = 'GET') {
 }
 
 /** Same as analyzerApi(), but for the two endpoints that need a JSON body (custom rules YAML, vhost-rules map) rather than query params. */
-function analyzerApiJson(pathAndQuery, method, bodyObj) {
+function analyzerApiJson(pathAndQuery, method, bodyObj, { timeoutMs = 8000 } = {}) {
   const c = getAnalyzerCfg();
   const body = JSON.stringify(bodyObj || {});
   return new Promise(resolve => {
     const req = http.request({
       hostname: containerName(c), port: analyzerPort(c),
-      path: pathAndQuery, method, timeout: 8000,
+      path: pathAndQuery, method, timeout: timeoutMs,
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body),
                  'X-Analyzer-Token': getAnalyzerToken(), 'User-Agent': cfg.HTTP_USER_AGENT },
     }, res => {
@@ -495,6 +503,7 @@ function register(router) {
       configured: true,
       enabled: !!c.enable,
       image: c.container_image || cfg.ANALYZER_DEFAULT_IMAGE,
+      legacyNodeImage: isLegacyNodeImage(c.container_image || cfg.ANALYZER_DEFAULT_IMAGE), // #80 : image Node obsolète
       containerName: containerName(c),
       learningDays: c.learning_days ?? 21,
       sigmaThreshold: c.sigma_threshold ?? 6,
@@ -821,20 +830,20 @@ function register(router) {
     const c = getAnalyzerCfg();
     if (!c?.enable) return httpLib.badRequest(res, 'Analyzer not enabled');
     const image = c.container_image || cfg.ANALYZER_DEFAULT_IMAGE;
-    const result = await docker.pullAndCheckUpdate(image);
-    if (!result.ok) return send(res, 200, { ok: false, error: result.error });
-    let recreated = false;
-    if (result.updated) {
-      const status = await analyzerStatus();
-      if (status.exists) {
-        try { await startAnalyzer(c); recreated = true; }
-        catch (e) { return send(res, 200, { ok: true, pulled: true, updated: true, recreated: false, recreateError: e.message }); }
-      }
-    }
-    logEvent('analyzer.image_update', `Image ${image} ${result.updated ? 'updated' : 'already up to date'}${recreated ? ', container recreated' : ''}`, session.username);
-    return send(res, 200, { ok: true, pulled: true, updated: result.updated, recreated });
+    const out = await lifecycle.legacyImageUpdate('analyzer');
+    logEvent('analyzer.image_update', `Image ${image} ${out.updated ? 'updated' : 'already up to date'}${out.recreated ? ', container recreated' : ''}`, session.username);
+    return send(res, 200, out);
   });
 }
+
+// ─── Cycle de vie uniforme (#104/#105) ───────────────────────────────────────
+lifecycle.register({
+  id: 'analyzer', label: 'Analyse des journaux', page: 'analyzer',
+  enabled: () => !!(getAnalyzerCfg() && getAnalyzerCfg().enable),
+  containerName: () => containerName(getAnalyzerCfg()),
+  image: () => { const c = getAnalyzerCfg() || {}; return c.container_image || cfg.ANALYZER_DEFAULT_IMAGE; },
+  create: () => startAnalyzer(getAnalyzerCfg()),
+});
 
 module.exports = {
   register, startAlertPolling, pollAlerts, pushVhostRules, buildVhostRulesMap,

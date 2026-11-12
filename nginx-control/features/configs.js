@@ -44,7 +44,7 @@ const auth     = require('../lib/auth');
 const tree     = require('../lib/fs-tree');
 const events   = require('../lib/events');
 const snippets = require('../lib/snippets');
-const { createBackupZip } = require('../lib/backup');
+const { autoBackup } = require('../lib/backup-targets');
 const { execNginx } = require('../lib/docker');
 const { getGitCfg } = require('../lib/git');
 
@@ -160,7 +160,7 @@ async function applyManagedFileWrite(filePath, newContent, { session, eventName,
     }
 
     // Backup before touching the live file.
-    await createBackupZip(eventName === 'config.create' ? 'pre-create' : 'pre-edit').catch(() => {});
+    await autoBackup(eventName === 'config.create' ? 'pre-create' : 'pre-edit', { local: true, git: false });
 
     // Apply.
     fs.copyFileSync(tmpFile, filePath);

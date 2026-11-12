@@ -1,0 +1,36 @@
+# Exemple : copier en docker-compose.yml et sample.env en .env.
+services:
+  hub:
+    build:
+      context: .
+      args:
+        WITH_PG: ${WITH_PG:-0}   # 1 = inclut le paquet « pg » (option PostgreSQL, voir docker-compose.postgres.yml)
+    image: ngx-ops-hub:12.81.0
+    container_name: ngx-ops-hub
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HUB_CONFIG: /config/hub.yml
+      HUB_DATA_DIR: /data
+    ports:
+      - "127.0.0.1:${HUB_PORT:-8090}:8090"   # exposé uniquement en local : nginx fait le TLS + frontal public
+    volumes:
+      - hub_data:/data
+      - ./config/hub.yml:/config/hub.yml:ro
+      # - ./certs/ca-interne.pem:/certs/ca-interne.pem:ro   # si security.extra_ca_file est utilisé
+    networks: [hub_net]
+    # Durcissement conteneur
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 256m
+
+volumes:
+  hub_data:
+
+networks:
+  hub_net:
+    # Réseau dédié : le Hub n'a besoin que de sortir vers les dashboards (HTTPS) ; rien ne le contacte sauf nginx.
+    driver: bridge

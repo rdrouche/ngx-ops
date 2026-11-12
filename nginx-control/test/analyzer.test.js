@@ -59,7 +59,7 @@ check('sans ANALYZER_DEFAULT_IMAGE -> le defaut historique reste inchange', () =
   delete process.env.ANALYZER_DEFAULT_IMAGE;
   delete require.cache[require.resolve('../lib/config')];
   const cfg = require('../lib/config');
-  assert.strictEqual(cfg.ANALYZER_DEFAULT_IMAGE, 'forge.rdr-it.com/dockerfiles/nginx-analyzer:latest');
+  assert.strictEqual(cfg.ANALYZER_DEFAULT_IMAGE, 'forge.rdr-it.com/ngx-ops/ngx-ops/analyzer-agent-go:latest');
 });
 check('avec ANALYZER_DEFAULT_IMAGE -> surcharge prise en compte par lib/config', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'analyzertest-defimg-b-'));

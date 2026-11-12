@@ -24,6 +24,10 @@ check('maintain recupere les pages libres (incremental_vacuum)', () => {
   fill(); db.exec('DELETE FROM junk'); const b = dm.freeStats(db).freePages;
   dm.maintain(db, { pages: 100000 }); assert.ok(dm.freeStats(db).freePages < b);
 });
+check('maintain controle l\'integrite (quick_check) et optimise (#100)', () => {
+  const st = dm.maintain(db, { label: 't', log() {} });
+  assert.strictEqual(st.integrity, 'ok');
+});
 check('register ne leve jamais', () => assert.doesNotThrow(() => dm.register(db, 't', { DB_COMPACT_ON_START: 'off' })));
 db.close();
 console.log(`\n${pass} ok, ${fail} ko`); process.exit(fail ? 1 : 0);

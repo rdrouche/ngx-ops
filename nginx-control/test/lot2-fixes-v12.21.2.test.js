@@ -49,8 +49,19 @@ console.log('\nDAC-04 — checkDomainConflict() : wildcard un seul niveau, casse
     // `-days` a une valeur negative (certificat deja expire, pour DAC-04)
     // n'est accepte que par `x509 -req` (une re-signature du CSR), jamais
     // par `req -x509` directement — d'ou les deux etapes.
-    execFileSync('openssl', ['x509', '-req', '-in', csrFile, '-signkey', keyFile,
-      '-out', certFile, '-days', String(days), '-extfile', cnfFile, '-extensions', 'ext'], { stdio: 'pipe' });
+    const signArgs = ['x509', '-req', '-in', csrFile, '-signkey', keyFile,
+      '-out', certFile, '-extfile', cnfFile, '-extensions', 'ext'];
+    if (days < 0) {
+      // OpenSSL recent (>= 3.4) refuse un `-days` negatif : on fixe les dates explicitement.
+      // Repli sur l'ancienne forme pour un OpenSSL qui ne connait pas -not_before/-not_after.
+      try {
+        execFileSync('openssl', [...signArgs, '-not_before', '20200101000000Z', '-not_after', '20200102000000Z'], { stdio: 'pipe' });
+      } catch {
+        execFileSync('openssl', [...signArgs, '-days', String(days)], { stdio: 'pipe' });
+      }
+    } else {
+      execFileSync('openssl', [...signArgs, '-days', String(days)], { stdio: 'pipe' });
+    }
   }
 
   let opensslAvailable = true;

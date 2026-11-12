@@ -255,7 +255,17 @@ function parseAndValidate(text, challengeOverrides) {
   }
   const challenge = normalizeChallengeSettings(config);
   errors.push(...challenge.errors);
+  // v12.75.0 : publication d'une URL PUBLIQUE (sans API) de la liste — voir features/public-blocklist.js.
+  const pubToken = String(config.public_token == null ? '' : config.public_token).trim();
+  if (pubToken && !/^[A-Za-z0-9_-]{16,128}$/.test(pubToken)) errors.push('public_token : 16 a 128 caracteres (lettres, chiffres, _ -) — ignore');
+  const pubSources = String(config.public_sources == null ? 'all' : config.public_sources).split(',').map(x => x.trim()).filter(Boolean);
   const settings = {
+    public: {
+      enable: config.public_enable === true,
+      token: /^[A-Za-z0-9_-]{16,128}$/.test(pubToken) ? pubToken : '',
+      tokenInvalid: !!pubToken && !/^[A-Za-z0-9_-]{16,128}$/.test(pubToken),
+      sources: pubSources.length ? pubSources.filter(n => /^[A-Za-z0-9_.-]{1,64}$/.test(n)) : ['all'],
+    },
     challenge: challenge.settings,
     enable: config.enable !== false,
     intervalCron: typeof config.interval_cron === 'string' && config.interval_cron.trim()

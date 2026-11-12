@@ -1,0 +1,35 @@
+# Journal centralisé (log store) — lecture (page « Journaux ») et envoi (conteneur shipper).
+# Désactivé par défaut. Éditable dans « Éditeur de configuration ». Page : « Journaux ».
+#
+# Principe : un serveur « log store » (API + PostgreSQL/TimescaleDB, projet nginx-logstore) reçoit les
+# journaux d'accès et les décisions (WAF, challenge, blocklist). Le « shipper » (conteneur géré ici) est le
+# SEUL point de sortie : il lit les journaux nginx et reçoit en HTTP local les décisions du WAF émulé et du
+# challenge. Cette page lit le log store avec un jeton de LECTURE ; le shipper écrit avec un jeton d'ÉCRITURE
+# propre à ce serveur. Les jetons se créent côté log store (POST /v1/tokens, voir nginx-logstore/README.md).
+#
+# ── Lecture (page Journaux) ──
+# enable: false
+# url: https://logs.example.com            # schéma://hôte[:port], sans chemin. http:// réservé à un nom de service
+#                                          # Docker, une IP privée ou localhost (sauf allow_insecure: true).
+# Jeton de lecture : variable d'environnement LOGSTORE_READ_TOKEN (recommandé, prioritaire) ou :
+# token: lgs_xxxxxxxxxxxxxxxxxxxxxxxx
+# timeout_seconds: 10                      # 2 à 60
+# allow_insecure: false                    # true : autorise http:// vers un hôte public (déconseillé, jeton en clair)
+#
+# ── Envoi (conteneur shipper géré par ce dashboard) ──
+# shipper_enable: false
+# shipper_name: ngx-shipper                # nom du conteneur ; les producteurs l'appellent sur http://<nom>:9181
+# shipper_image:                           # défaut : SHIPPER_DEFAULT_IMAGE, sinon l'image de l'analyseur
+# shipper_host_logs_path: /containers/nginx-rproxy/logs     # défaut : HOST_LOGS (monté en lecture seule)
+# shipper_host_data_path: /containers/nginx-rproxy/shipper  # OBLIGATOIRE : positions de lecture + tampon disque
+# shipper_sink_url:                        # défaut : url ci-dessus
+# Jeton d'écriture de ce serveur : variable LOGSINK_TOKEN (recommandé, prioritaire) ou :
+# shipper_sink_token: lgs_xxxxxxxxxxxxxxxxxxxxxxxx
+# shipper_allow_insecure: false
+# instance: web1                           # nom affiché dans le log store ; défaut : INSTANCE_ID
+# shipper_crowdsec: true                   # expédier les nouvelles décisions CrowdSec locales (#110 ; ignore la communauté CAPI)
+# shipper_blocklist: true                  # lire aussi blocklist-hits.log (décisions de la blocklist)
+# shipper_country: false                   # enrichir les accès avec le pays (GeoIP)
+#
+# Pour que le WAF émulé et le challenge envoient leurs décisions au shipper, renseigner dans
+# config/waf.yml et config/challenge.yml :  shipper_url: http://ngx-shipper:9181

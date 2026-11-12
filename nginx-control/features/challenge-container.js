@@ -24,6 +24,7 @@ const appCfg  = require('../lib/config');
 const httpLib = require('../lib/http');
 const auth    = require('../lib/auth');
 const docker  = require('../lib/docker');
+const lifecycle = require('../lib/container-lifecycle');
 const events  = require('../lib/events');
 const CC      = require('../lib/challenge-container');
 const { parseAndValidate } = require('../lib/blocklist-yaml');
@@ -135,6 +136,7 @@ async function startContainer(r) {
   const spec = CC.buildContainerSpec({
     engine: r.engine, image: r.image, network: appCfg.NGINX_NETWORK, upstream: r.upstream,
     config: r.config, secret: secretFor(r),
+    shipperToken: r.config.shipperUrl ? require('../lib/shipper-token').getShipperToken() : undefined,
   });
   await dockerCall('POST', `/containers/${encodeURIComponent(r.name)}/stop`).catch(() => {});
   await dockerCall('DELETE', `/containers/${encodeURIComponent(r.name)}?force=true`).catch(() => {});
@@ -189,7 +191,7 @@ function register(router) {
     const fileState = blocklists.getChallengeFilesState();
     out.settings = {
       engine: ch.challenge.engine, upstream: ch.challenge.upstreamEffective, resolver: ch.challenge.resolver,
-      exemptPathRegex: ch.challenge.exemptPathRegex, exemptUaRegex: ch.challenge.exemptUaRegex,
+      exemptPathRegex: ch.challenge.exemptPathRegex, exemptUaRegex: ch.challenge.exemptUaRegex, failOpen: ch.challenge.failOpen, whitelist: ch.challenge.whitelist,
       goodbots: r.config.goodbots, goodbotsExtra: r.config.goodbotsExtra,
       difficultyBits: r.config.difficultyBits, cookieHours: r.config.cookieHours,
       profiles: ch.challenge.profiles.map(pr => ({ name: pr.name, mode: pr.mode, file: pr.file, exemptPathRegex: pr.exemptPathRegex, exemptUaRegex: pr.exemptUaRegex })),
@@ -278,19 +280,25 @@ function register(router) {
     if (!hasPerm(session, PERMS.DEPLOY)) return httpLib.forbidden(res);
     const r = resolve();
     if (!r.config.enable) return httpLib.badRequest(res, 'challenge is not enabled in challenge.yml');
-    const result = await docker.pullAndCheckUpdate(r.image);
-    if (!result.ok) return send(res, 200, { ok: false, error: result.error });
-    let recreated = false;
-    if (result.updated) {
-      const st = await containerStatus(r.name);
-      if (st.exists) {
-        try { await startContainer(r); recreated = true; }
-        catch (e) { return send(res, 200, { ok: true, pulled: true, updated: true, recreated: false, recreateError: e.message }); }
-      }
-    }
-    logEvent('challenge.image_update', `Image ${r.image} ${result.updated ? 'updated' : 'already up to date'}${recreated ? ', container recreated' : ''}`, session.username);
-    return send(res, 200, { ok: true, pulled: true, updated: result.updated, recreated });
+    const out = await lifecycle.legacyImageUpdate('challenge');
+    logEvent('challenge.image_update', `Image ${r.image} ${out.updated ? 'updated' : 'already up to date'}${out.recreated ? ', container recreated' : ''}`, session.username);
+    return send(res, 200, out);
   });
 }
+
+// ─── Cycle de vie uniforme (#104) ────────────────────────────────────────────
+lifecycle.register({
+  id: 'challenge', label: 'Challenge', page: 'challenge',
+  enabled: () => !!resolve().config.enable,
+  containerName: () => resolve().name,
+  image: () => resolve().image,
+  create: async () => {
+    const r = resolve();
+    if (r.errors.length) throw lifecycle.httpError(400, 'invalid_config', r.errors.join(' ; '));
+    const pull = await docker.pullAndCheckUpdate(r.image);
+    if (!pull.ok) throw new Error(`Pull de l'image ${r.image} echoue : ${pull.error}`);
+    return startContainer(r);
+  },
+});
 
 module.exports = { register, resolve, challengeListIps, challengeBanEvents, secretFor, startContainer, containerStatus, ensureContainerAtBoot };

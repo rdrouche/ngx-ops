@@ -42,6 +42,16 @@
 const crypto = require('crypto');
 
 const LABEL_PREFIX = 'nginx-control.';
+// Nouveau préfixe, accepté en parallèle (migration) : `ngx-ops.x` ≡ `nginx-control.x`.
+// Si les deux existent pour la même clé, `ngx-ops.` l'emporte (c'est la cible de la migration).
+const LABEL_PREFIX_NEW = 'ngx-ops.';
+function normalizeLabels(labels) {
+  const out = {};
+  const src = labels || {};
+  for (const [k, v] of Object.entries(src)) if (!k.startsWith(LABEL_PREFIX_NEW)) out[k] = v;
+  for (const [k, v] of Object.entries(src)) if (k.startsWith(LABEL_PREFIX_NEW)) out[LABEL_PREFIX + k.slice(LABEL_PREFIX_NEW.length)] = v;
+  return out;
+}
 
 // server_name: a normal hostname, or a leading "*." wildcard (nginx's own
 // wildcard syntax). Fully anchored — this is the only thing that ever ends
@@ -94,7 +104,7 @@ function parseBoolLabel(raw, fallback) {
  * truthiness check.
  */
 function parseContainerLabels(labels) {
-  const l = labels || {};
+  const l = normalizeLabels(labels);
   if (String(l[`${LABEL_PREFIX}enable`] || '').toLowerCase() !== 'true') return null;
 
   const desired = {
@@ -607,7 +617,7 @@ function generateVhostContent(validated, serverNames, listen, meta = {}) {
 }
 
 module.exports = {
-  LABEL_PREFIX, HOSTNAME_RE, LOCATION_RE, PROXY_PASS_RE, NETWORK_NAME_RE,
+  LABEL_PREFIX, LABEL_PREFIX_NEW, normalizeLabels, HOSTNAME_RE, LOCATION_RE, PROXY_PASS_RE, NETWORK_NAME_RE,
   SSL_MODE_RE, SNIPPET_FILENAME_RE, INTERVAL_RE, HTTP_CODE_TOKEN_RE, RULE_ID_TOKEN_RE,
   UPSTREAM_GROUP_NAME_RE,
   parseContainerLabels, validateDesiredVhost,

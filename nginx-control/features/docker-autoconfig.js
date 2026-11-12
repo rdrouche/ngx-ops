@@ -32,7 +32,7 @@ const docker  = require('../lib/docker');
 const events  = require('../lib/events');
 const notify  = require('../lib/notify');
 const { pushNotification } = require('../lib/notifications');
-const { checkDomainConflict } = require('../lib/certs');
+const { checkDomainConflict, findUsableCertificate } = require('../lib/certs');
 const { listSSLSnippets } = require('../lib/snippets');
 const { parseAndValidate, matchesAnyPattern } = require('../lib/docker-autoconfig-yaml');
 const { withLock } = require('../lib/nginx-write-lock');
@@ -224,14 +224,8 @@ function resolveSsl(validated, serverNames, issuanceState = {}) {
   if (validated.ssl.mode === 'auto') {
     // Fix v12.21.2 (audit finding DAC-04): pass every server_name so the
     // matched certificate must cover the WHOLE vhost, not just the first name.
-    const result = checkDomainConflict(serverNames[0], { allNames: serverNames });
-    if (result.conflict) {
-      return {
-        type: 'cert',
-        certPath: `/etc/letsencrypt/live/${result.cert}/fullchain.pem`,
-        keyPath: `/etc/letsencrypt/live/${result.cert}/privkey.pem`,
-      };
-    }
+    const found = findUsableCertificate(serverNames);
+    if (found.found) return { type: 'cert', certPath: found.certPath, keyPath: found.keyPath, source: found.source };
     return { type: 'pending' };
   }
   if (validated.ssl.mode === 'certbot_http' || validated.ssl.mode === 'certbot_dns') {
@@ -246,14 +240,8 @@ function resolveSsl(validated, serverNames, issuanceState = {}) {
           : "Certbot n est pas active (config/certbot.yml : enable: false) — l activer avant d utiliser ssl_certificate=certbot_http.",
       };
     }
-    const result = checkDomainConflict(serverNames[0], { allNames: serverNames });
-    if (result.conflict) {
-      return {
-        type: 'cert',
-        certPath: `/etc/letsencrypt/live/${result.cert}/fullchain.pem`,
-        keyPath: `/etc/letsencrypt/live/${result.cert}/privkey.pem`,
-      };
-    }
+    const found = findUsableCertificate(serverNames);
+    if (found.found) return { type: 'cert', certPath: found.certPath, keyPath: found.keyPath, source: found.source };
     const entry = effectiveIssuanceEntry(issuanceState[serverNames[0].toLowerCase()]);
     if (entry?.status === 'issuing') return { type: 'pending', issuing: true };
     if (entry?.status === 'failed') {

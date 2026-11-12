@@ -30,6 +30,10 @@ check('les overrides demandes sont bien appliques (geomap -> map, logs -> live-l
   assert.strictEqual(R.SLUG_TO_PAGE.map, 'geomap');
   assert.strictEqual(R.SLUG_TO_PAGE['live-logs'], 'logs');
 });
+check('Journaux : page logstore -> /logstore (slug identique)', () => {
+  assert.strictEqual(R.PAGE_TO_SLUG.logstore, 'logstore');
+  assert.strictEqual(R.SLUG_TO_PAGE.logstore, 'logstore');
+});
 check('WAF emule : page wafemu -> /waf-emu, sans toucher a la page WAF (ModSecurity) existante', () => {
   assert.strictEqual(R.PAGE_TO_SLUG.wafemu, 'waf-emu');
   assert.strictEqual(R.SLUG_TO_PAGE['waf-emu'], 'wafemu');

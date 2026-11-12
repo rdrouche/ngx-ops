@@ -20,9 +20,6 @@ async function errorPagesLoad() {
 async function errorPagesRefreshStatus() {
   const d = await api('/error-pages/status').catch(() => null);
   const el       = document.getElementById('ep-status');
-  const btnStart = document.getElementById('ep-start');
-  const btnStop  = document.getElementById('ep-stop');
-  const btnImg   = document.getElementById('ep-image-update');
   if (!d?.enabled || !el) return;
   const c = d.container;
   const cfgTemplate = document.getElementById('ep-template-cfg').textContent;
@@ -31,17 +28,13 @@ async function errorPagesRefreshStatus() {
   const mismatch = document.getElementById('ep-template-mismatch');
   mismatch.style.display = (activeTemplate && activeTemplate !== cfgTemplate) ? '' : 'none';
 
-  btnImg.style.display = '';
   if (!c?.exists) {
     el.innerHTML = '<span class="cb-status-dot stopped"></span>' + t('godns.containerAbsent');
-    btnStart.style.display = ''; btnStop.style.display = 'none';
   } else if (c.running) {
     el.innerHTML = '<span class="cb-status-dot running"></span>' + t('godns.running', { image: h(c.image) }) +
       (c.started ? t('geoip.startedAt', { date: new Date(c.started).toLocaleString('fr-FR') }) : '');
-    btnStart.style.display = ''; btnStop.style.display = '';
   } else {
     el.innerHTML = '<span class="cb-status-dot stopped"></span>' + t('godns.stopped') + ' (' + h(c.status || '?') + ')';
-    btnStart.style.display = ''; btnStop.style.display = 'none';
   }
 }
 

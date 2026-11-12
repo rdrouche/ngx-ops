@@ -2,8 +2,8 @@
 // vérification navigateur (preuve de travail) qui délivre un cookie signé, et
 // un point de contrôle (/check) appelé par nginx via auth_request.
 //
-// Aucune dépendance externe, aucun état persistant : le secret de signature
-// suffit. Si NC_SECRET est absent : avec NC_SECRET_FILE, le secret est tiré une
+// Aucune dépendance externe ; état persistant facultatif (fichier de stats, Redis
+// via NC_REDIS_URL) : le secret de signature suffit au fonctionnement. Si NC_SECRET est absent : avec NC_SECRET_FILE, le secret est tiré une
 // fois et conservé dans ce fichier ; sans, il est aléatoire à chaque démarrage
 // (les cookies ne survivent pas à un redémarrage).
 package challenge
@@ -35,6 +35,11 @@ type Config struct {
 	Lang            string          // NC_LANG : auto (Accept-Language, repli en), fr ou en
 	GoodBots        bool            // NC_GOODBOTS, défaut true : robots d'indexation vérifiés (si le vhost l'autorise)
 	ExtraBots       []BotRule       // NC_GOODBOTS_EXTRA : règles supplémentaires nom|regex|.suffixe
+	RedisURL        string          // NC_REDIS_URL (vide = pas de Redis)
+	RedisPassword   string          // NC_REDIS_PASSWORD (jamais dans l'URL ni les journaux)
+	RedisPrefix     string          // NC_REDIS_PREFIX (défaut "ngx")
+	ShipperURL      string          // NC_SHIPPER_URL : API locale du shipper (journal centralisé) ; vide = aucun envoi
+	ShipperToken    string          // NC_SHIPPER_TOKEN : jeton local du shipper (jamais journalisé)
 	Offenders       OffendersConfig // NC_AUTOBLOCK*, NC_OFFENDERS_HOURS : analyse des IP en échec et blocage automatique
 }
 
@@ -83,6 +88,14 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		return c, fmt.Errorf("NC_SECRET trop court (%d caractères, minimum %d)", len(secret), minSecretLen)
 	default:
 		c.Secret = []byte(secret)
+	}
+	c.RedisURL = strings.TrimSpace(getenv("NC_REDIS_URL"))
+	c.RedisPassword = getenv("NC_REDIS_PASSWORD")
+	c.RedisPrefix = strings.TrimSpace(getenv("NC_REDIS_PREFIX"))
+	c.ShipperURL = strings.TrimSpace(getenv("NC_SHIPPER_URL"))
+	c.ShipperToken = strings.TrimSpace(getenv("NC_SHIPPER_TOKEN"))
+	if c.RedisPrefix != "" && !validCookieName(c.RedisPrefix) {
+		return c, errors.New("NC_REDIS_PREFIX invalide (lettres, chiffres, _ et - uniquement)")
 	}
 	var err error
 	if c.Bits, err = intEnv(getenv, "NC_DIFFICULTY_BITS", c.Bits, 8, 64); err != nil {

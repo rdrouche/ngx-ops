@@ -47,12 +47,12 @@ check('regex : liste blanche de caracteres, longueur, validite', () => {
 });
 
 console.log('\nbuildChallengeHttp()');
-check('geo + maps ; le defaut ne challenge personne ; "100" = soumettre', () => {
+check('geo + maps ; le defaut ne challenge personne ; "1000" = soumettre', () => {
   const { settings } = G.normalizeChallengeSettings({ challenge_enable: true, challenge_exempt_ua_regex: '^git/' });
   const c = code(G.buildChallengeHttp(settings, ['192.0.2.1', '198.51.100.0/24']));
   assert.ok(c.includes('geo $blocklist_challenge {') && c.includes('default 0;') && c.includes('192.0.2.1 1;') && c.includes('198.51.100.0/24 1;'));
   assert.ok(c.includes('"~*^/[.]well-known/" 1;') && c.includes('"~*^git/" 1;'));
-  assert.ok(/default 1;\s*"100" 0;/.test(c));
+  assert.ok(/default 1;\s*"1000" 0;/.test(c));
 });
 check('liste vide : fichier valide sans entree', () => {
   const c = code(G.emptyChallengeHttp());
@@ -109,7 +109,7 @@ check('desactive : les trois snippets sont vides de directives', () => {
 });
 check('la map $nc_gate_skip_all ne laisse passer que les exemptions', () => {
   const c = code(G.buildChallengeHttp(G.normalizeChallengeSettings({ challenge_enable: true }).settings, []));
-  assert.ok(/map "\$nc_exempt_path\$nc_exempt_ua" \$nc_gate_skip_all \{\s*default 1;\s*"00" 0;/.test(c));
+  assert.ok(/map "\$nc_exempt_path\$nc_exempt_ua\$nc_exempt_ip" \$nc_gate_skip_all \{\s*default 1;\s*"000" 0;/.test(c));
 });
 
 console.log('\nblocklists.yml : cles challenge_*');
@@ -184,8 +184,8 @@ check('un snippet et des variables nginx dedies par profil, aucune collision ave
   assert.ok(code(snips[7].content).includes('X-NC-Allow-Bots ""'));
   const http = code(G.buildChallengeHttp(settings, ['203.0.113.1'], 's'));
   assert.ok(http.includes('"~*^forgejo-runner/" 1;'));
-  assert.ok(http.includes('map "$blocklist_challenge$nc_exempt_path_git$nc_exempt_ua_git" $nc_gate_skip_git'));
-  assert.ok(http.includes('map "$nc_exempt_path_forgejo$nc_exempt_ua_forgejo" $nc_gate_skip_forgejo'));
+  assert.ok(http.includes('map "$blocklist_challenge$nc_exempt_path_git$nc_exempt_ua_git$nc_exempt_ip" $nc_gate_skip_git'));
+  assert.ok(http.includes('map "$nc_exempt_path_forgejo$nc_exempt_ua_forgejo$nc_exempt_ip" $nc_gate_skip_forgejo'));
 });
 check('noms invalides, reserves, doubles et regex dangereuse refuses', () => {
   const bad = [{ name: 'Bad' }, { name: 'all' }, { name: 'x;y' }, { name: 'ok' }, { name: 'ok' }, { name: 'z', mode: 'nope' }, { name: 'w', exempt_ua_regex: 'a b' }];

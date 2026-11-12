@@ -22,6 +22,7 @@ const events   = require('../lib/events');
 const notifications = require('../lib/notifications');
 const settingsLib = require('../lib/intel-settings');
 const client   = require('../lib/intel-client');
+const intelConfig = require('../lib/intel-config');
 
 const { PERMS, hasPerm } = auth;
 const { send } = httpLib;
@@ -338,6 +339,28 @@ function register(router) {
     const r = await doPing({ force: true });
     if (r.busy) return send(res, 200, { busy: true });
     return send(res, 200, { ping: pingPublic(r) });
+  });
+
+  // #88 : formulaire de configuration. Le jeton n'est jamais renvoye (tokenSet seulement) ; ecriture admin uniquement.
+  router.get('/api/intelligence/config', async ({ res, session }) => {
+    if (!guard(session, res)) return;
+    const env = { apiUrl: cfg.INTEL_API_URL, token: cfg.INTEL_TOKEN };
+    const text = readFileOr(cfg.INTELLIGENCE_CONFIG_FILE);
+    const { settings, errors } = settingsLib.normalizeIntelSettings(text, env);
+    return send(res, 200, intelConfig.formView({ settings, errors, text, env }));
+  });
+
+  router.put('/api/intelligence/config', async ({ req, res, session }) => {
+    if (!hasPerm(session, PERMS.MANAGE_USERS)) return httpLib.forbidden(res);
+    const body = await httpLib.parseBody(req, { limitBytes: 64 * 1024 });
+    const env = { apiUrl: cfg.INTEL_API_URL, token: cfg.INTEL_TOKEN };
+    const r = intelConfig.buildConfig(body, readFileOr(cfg.INTELLIGENCE_CONFIG_FILE), env);
+    if (!r.ok) return send(res, 400, { error: 'invalid_config', errors: r.errors });
+    const tmp = cfg.INTELLIGENCE_CONFIG_FILE + '.tmp';
+    fs.writeFileSync(tmp, r.yaml, { mode: 0o600 });
+    fs.renameSync(tmp, cfg.INTELLIGENCE_CONFIG_FILE);
+    logEvent('intelligence.config_saved', 'Configuration Intelligence enregistree (formulaire)', session.username);
+    return send(res, 200, { ok: true, status: publicStatus() });
   });
 
   router.post('/api/intelligence/reset', async ({ res, session }) => {

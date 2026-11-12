@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>NGX Ops Log store — administration</title>
+<link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+<main>
+  <h1>Log store — administration</h1>
+
+  <section id="login">
+    <p class="muted">Authentification par le <b>jeton admin</b>. Il reste en mémoire dans cet onglet (jamais stocké) et disparaît à la fermeture ou au rechargement.</p>
+    <form id="login-form" autocomplete="off">
+      <label for="admin-token">Jeton admin</label>
+      <input id="admin-token" type="password" autocomplete="off" spellcheck="false" required>
+      <button type="submit">Se connecter</button>
+    </form>
+    <p id="login-err" class="err" role="alert"></p>
+  </section>
+
+  <section id="app" hidden>
+    <div class="bar"><span class="muted" id="who"></span><button id="logout" type="button" class="ghost">Se déconnecter</button></div>
+
+    <div id="new-token" class="banner" hidden>
+      <b>Nouveau jeton — affiché une seule fois</b>
+      <code id="new-token-value"></code>
+      <button id="copy" type="button">Copier</button>
+      <button id="dismiss" type="button" class="ghost">J'ai copié le jeton</button>
+    </div>
+
+    <h2>Créer un jeton</h2>
+    <form id="create-form" autocomplete="off">
+      <div class="row">
+        <div><label for="c-label">Libellé</label><input id="c-label" maxlength="64" required placeholder="dashboard-web1"></div>
+        <div><label for="c-role">Rôle</label>
+          <select id="c-role">
+            <option value="write">write — envoi (shipper, une instance)</option>
+            <option value="read">read — lecture</option>
+            <option value="admin">admin — gestion</option>
+          </select></div>
+        <div><label for="c-inst">Instance</label><input id="c-inst" maxlength="63" placeholder="web1" pattern="[a-z0-9._\-]{1,63}"></div>
+      </div>
+      <p class="muted" id="c-help"></p>
+      <button type="submit">Créer</button>
+      <span id="c-err" class="err" role="alert"></span>
+    </form>
+
+    <h2>Jetons</h2>
+    <label class="check"><input type="checkbox" id="show-revoked"> Afficher les jetons révoqués</label>
+    <div class="wrap"><table>
+      <thead><tr><th>#</th><th>Libellé</th><th>Rôle</th><th>Instance</th><th>Créé</th><th>Dernier usage</th><th>État</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+    <p id="list-err" class="err" role="alert"></p>
+
+    <h2>Base de données</h2>
+    <dl id="db-info" class="muted"></dl>
+    <p id="db-err" class="err" role="alert"></p>
+
+    <h2>Maintenance PostgreSQL</h2>
+    <p class="muted" id="m-summary"></p>
+    <div class="bar">
+      <span><button id="m-run" type="button">Lancer la maintenance</button> <button id="m-refresh" type="button" class="ghost">Actualiser</button></span>
+      <span id="m-err" class="err" role="alert"></span>
+    </div>
+    <h3>Vérifications</h3>
+    <div class="wrap"><table>
+      <thead><tr><th>Contrôle</th><th>État</th><th>Détail</th></tr></thead>
+      <tbody id="m-checks"></tbody>
+    </table></div>
+    <h3>Tables</h3>
+    <div class="wrap"><table>
+      <thead><tr><th>Table</th><th>Taille</th><th>Lignes vivantes</th><th>Lignes mortes</th><th>Dernier vacuum</th><th>Dernier analyze</th></tr></thead>
+      <tbody id="m-tables"></tbody>
+    </table></div>
+    <p id="m-comp" class="muted"></p>
+  </section>
+</main>
+<script src="/ui/app.js"></script>
+</body>
+</html>

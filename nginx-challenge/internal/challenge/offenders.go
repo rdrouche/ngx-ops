@@ -67,13 +67,26 @@ type Ban struct {
 
 // Offenders : suivi thread-safe.
 type Offenders struct {
-	mu   sync.Mutex
-	cfg  OffendersConfig
-	recs map[string]*ipRec
-	bans map[string]*Ban
-	log  []Ban // historique des blocages déclenchés (anneau)
-	seq  int64
-	now  func() time.Time
+	mu        sync.Mutex
+	cfg       OffendersConfig
+	recs      map[string]*ipRec
+	bans      map[string]*Ban
+	log       []Ban // historique des blocages déclenchés (anneau)
+	seq       int64
+	lastRedir map[string]int64 // dernière redirection comptée par IP (ms) : anti double-comptage
+	ver       uint64           // incrémenté à chaque modification (sauvegarde Redis)
+	now       func() time.Time
+	onBan     func(Ban) // facultatif : notifié à chaque blocage automatique déclenché
+}
+
+// SetOnBan enregistre le rappel notifié à chaque blocage automatique (non bloquant exigé : appelé sous verrou).
+func (o *Offenders) SetOnBan(f func(Ban)) {
+	if o == nil {
+		return
+	}
+	o.mu.Lock()
+	o.onBan = f
+	o.mu.Unlock()
 }
 
 // NewOffenders crée le suivi (cfg normalisée).
@@ -94,7 +107,7 @@ func NewOffenders(cfg OffendersConfig) *Offenders {
 	if cfg.Retention < cfg.Window {
 		cfg.Retention = cfg.Window
 	}
-	return &Offenders{cfg: cfg, recs: map[string]*ipRec{}, bans: map[string]*Ban{}, now: time.Now}
+	return &Offenders{cfg: cfg, recs: map[string]*ipRec{}, bans: map[string]*Ban{}, lastRedir: map[string]int64{}, now: time.Now}
 }
 
 // NormIP valide une adresse et renvoie sa forme canonique ("" si invalide).
@@ -126,6 +139,7 @@ func (o *Offenders) Record(ip, ua, host string, f func(*Counts)) {
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	o.ver++
 	now := o.now()
 	r := o.recs[ip]
 	if r == nil {
@@ -203,6 +217,9 @@ func (o *Offenders) evalLocked(ip string, r *ipRec, now time.Time) {
 	}
 	o.bans[ip] = b
 	o.log = append(o.log, *b)
+	if o.onBan != nil {
+		o.onBan(*b) // non bloquant (file bornée du client de décisions) : sûr sous le verrou
+	}
 	if len(o.log) > maxBanEvents {
 		o.log = o.log[len(o.log)-maxBanEvents:]
 	}
@@ -235,6 +252,7 @@ func (o *Offenders) Unban(ip string) bool {
 	ip = NormIP(ip)
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	o.ver++
 	_, ok := o.bans[ip]
 	delete(o.bans, ip)
 	if r := o.recs[ip]; r != nil {
@@ -374,4 +392,44 @@ func (c OffendersConfig) Describe() string {
 		return "blocage automatique désactivé (analyse des IP en échec active)"
 	}
 	return fmt.Sprintf("blocage automatique : %d échecs / %d min → %s", c.Threshold, int(c.Window/time.Minute), c.BanFor)
+}
+
+// redirDebounce : une même IP n'est comptée qu'une fois par intervalle pour les redirections. Un navigateur
+// qui charge une page enchaîne en quelques millisecondes le document, le favicon, des ressources… tous
+// renvoyés vers la page de vérification : sans cela, UNE navigation comptait pour 2 à 10 échecs.
+const redirDebounce = 2 * time.Second
+
+// IsNavigation indique si une requête est une navigation (document) plutôt qu'une sous-ressource
+// (favicon, image, script, XHR/fetch). Les navigateurs modernes envoient Sec-Fetch-Dest ; son absence
+// (robots, curl, vieux navigateurs) est comptée comme navigation.
+func IsNavigation(secFetchDest string) bool {
+	switch strings.ToLower(strings.TrimSpace(secFetchDest)) {
+	case "", "document", "iframe", "frame", "embed", "object":
+		return true
+	}
+	return false
+}
+
+// RecordRedirect compte une redirection vers la page de vérification dans le suivi par IP, sauf
+// si elle suit de moins de redirDebounce une redirection déjà comptée pour cette IP.
+func (o *Offenders) RecordRedirect(ip, ua, host string, f func(*Counts)) {
+	if o == nil {
+		return
+	}
+	nip := NormIP(ip)
+	if nip == "" {
+		return
+	}
+	nowMs := o.now().UnixMilli()
+	o.mu.Lock()
+	if last, ok := o.lastRedir[nip]; ok && nowMs-last < redirDebounce.Milliseconds() {
+		o.mu.Unlock()
+		return
+	}
+	if len(o.lastRedir) >= maxTrackedIPs {
+		o.lastRedir = map[string]int64{}
+	}
+	o.lastRedir[nip] = nowMs
+	o.mu.Unlock()
+	o.Record(ip, ua, host, f)
 }

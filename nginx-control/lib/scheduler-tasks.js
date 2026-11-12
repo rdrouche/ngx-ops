@@ -192,8 +192,9 @@ const TYPES = {
         if (recipients.length) {
           try {
             await sendMail(recipients,
-              `[Nginx Dashboard] Résumé périodique — ${new Date(d.generatedAt).toLocaleDateString('fr-FR')}`,
-              digest.formatDigestText(d));
+              `[NGX Ops] Résumé — ${new Date(d.generatedAt).toLocaleDateString('fr-FR')}`,
+              digest.formatDigestText(d), undefined,
+              { html: digest.formatDigestHtml(d) });
             mailed = recipients.length;
           } catch (e) { console.warn('[scheduler] Digest mail error:', e.message); }
         }
@@ -205,8 +206,8 @@ const TYPES = {
   backup: {
     label: L('Sauvegarde', 'Backup'),
     description: L(
-      'Crée une sauvegarde de la configuration : archive ZIP locale, push Git, ou les deux.',
-      'Creates a configuration backup: local ZIP, Git push, or both.'),
+      'Crée une sauvegarde de la configuration : archive ZIP locale, push Git, S3, ou une combinaison.',
+      'Creates a configuration backup: local ZIP, Git push, S3, or a combination.'),
     notifyLabel: L('Envoyer un e-mail en cas d\'échec', 'E-mail on failure'),
     params: [
       { key: 'mode', type: 'select', default: 'local',
@@ -214,27 +215,50 @@ const TYPES = {
         options: [
           { value: 'local', label: L('Archive ZIP locale', 'Local ZIP archive') },
           { value: 'git',   label: L('Push Git', 'Git push') },
-          { value: 'both',  label: L('Les deux', 'Both') },
+          { value: 'both',  label: L('Local + Git', 'Local + Git') },
+          { value: 's3',    label: L('S3 (stockage objet)', 'S3 (object storage)') },
+          { value: 'all',   label: L('Local + Git + S3', 'Local + Git + S3') },
         ] },
     ],
     async run(params, ctx) {
       const mode = params.mode || 'local';
-      const doLocal = mode === 'local' || mode === 'both';
-      const doGit = (mode === 'git' || mode === 'both') && !!cfg.GIT_REPO_URL;
-      let zip = null, git = null;
+      const doLocal = mode === 'local' || mode === 'both' || mode === 'all';
+      const doGit = (mode === 'git' || mode === 'both' || mode === 'all') && !!cfg.GIT_REPO_URL;
+      const doS3 = mode === 's3' || mode === 'all';
+      let zip = null, git = null, s3 = null;
       if (doLocal) zip = await ctx.tasks.createBackupZip('scheduled').catch(e => ({ error: e.message }));
       if (doGit) git = await ctx.tasks.gitBackupPush('scheduled').catch(e => ({ error: e.message }));
-      const failed = (zip && zip.error) || (doGit && git && git.error);
-      logEvent('scheduler.backup', { mode, zip: zip && zip.zipName, git: git && git.tag, failed });
+      if (doS3) s3 = await ctx.tasks.s3BackupPush('scheduled').catch(e => ({ error: e.message }));
+      const failed = (zip && zip.error) || (doGit && git && git.error) || (s3 && s3.error) || (s3 && s3.ngxops && s3.ngxops.error);
+      logEvent('scheduler.backup', { mode, zip: zip && zip.zipName, git: git && git.tag, s3: s3 && (s3.key || s3.reason), failed });
       if (failed && ctx.task.notify) {
         await sendNotification('backup_failure', '[Nginx Dashboard] Scheduled backup FAILED',
-          `Backup failed.\nMode: ${mode}\nZIP: ${(zip && (zip.error || zip.zipName)) || 'skipped'}\nGit: ${(git && (git.error || git.tag)) || 'skipped'}`);
+          `Backup failed.\nMode: ${mode}\nZIP: ${(zip && (zip.error || zip.zipName)) || 'skipped'}\nGit: ${(git && (git.error || git.tag)) || 'skipped'}\nS3: ${(s3 && (s3.error || s3.key || s3.reason)) || 'skipped'}`);
       }
       const parts = [];
       if (zip) parts.push(zip.error ? `ZIP : ${zip.error}` : `ZIP : ${zip.zipName}`);
       if (git) parts.push(git.error ? `Git : ${git.error}` : `Git : ${git.tag}`);
-      if (!parts.length) return { status: 'skipped', message: 'Rien à sauvegarder (mode Git sans dépôt configuré)' };
+      if (s3 && !s3.skipped) parts.push(s3.error ? `S3 : ${s3.error}` : `S3 : ${s3.key}${s3.ngxops ? (s3.ngxops.error ? ` (YAML : ${s3.ngxops.error})` : ' + YAML') : ''}`);
+      if (s3 && s3.skipped) parts.push(`S3 ignoré : ${s3.reason}`);
+      if (!parts.length || (parts.length === 1 && s3 && s3.skipped)) return { status: 'skipped', message: parts.join(' — ') || 'Rien à sauvegarder (mode Git sans dépôt configuré)' };
       return { status: failed ? 'error' : 'ok', message: parts.join(' — ') };
+    },
+  },
+
+  hub_backup: {
+    label: L('Sauvegarde vers le Hub', 'Backup to Hub'),
+    description: L(
+      'Envoie (push) la configuration nginx, les fichiers de config NGX Ops et les variables d\'environnement (secrets masqués) vers NGX Ops Hub. Réglages : config/hub.yml.',
+      'Pushes nginx config, NGX Ops config files and environment variables (secrets masked) to NGX Ops Hub. Settings: config/hub.yml.'),
+    notifyLabel: L('Envoyer un e-mail en cas d\'échec', 'E-mail on failure'),
+    params: [],
+    async run(params, ctx) {
+      const r = await require('../features/hub').runPush('scheduled');
+      logEvent('scheduler.hub_backup', { ok: r.ok, message: r.message });
+      if (!r.ok && ctx.task.notify) {
+        await sendNotification('backup_failure', '[NGX Ops] Hub backup FAILED', `Backup to Hub failed: ${r.message}`);
+      }
+      return { status: r.ok ? 'ok' : 'error', message: r.message };
     },
   },
 
@@ -265,6 +289,62 @@ const TYPES = {
       }
       if (errors.length) return { status: 'error', message: `${restarted} redémarré(s), erreurs : ${errors.join(' ; ')}` };
       return { status: 'ok', message: `${restarted} conteneur(s) GoAccess redémarré(s) sur ${targets.length}` };
+    },
+  },
+
+  containers_restart: {
+    label: L('Redémarrer des conteneurs gérés', 'Restart managed containers'),
+    description: L(
+      'Redémarre les conteneurs choisis (analyzer, WAF, shipper, challenge HTTP, certbot…) l\'un après l\'autre. Une entrée « image partagée » cible d\'un coup tous les conteneurs de l\'agent Go. Un conteneur absent ou désactivé est ignoré (jamais créé).',
+      'Restarts the chosen containers (analyzer, WAF, shipper, HTTP challenge, certbot…) one after another. A "shared image" entry targets every Go-agent container at once. A missing or disabled container is skipped (never created).'),
+    notifyLabel: null,
+    params: [
+      { key: 'targets', type: 'multiselect', optionsFrom: 'managed_containers', max: 30, default: [],
+        label: L('Conteneurs', 'Containers'),
+        help: L('Au moins un conteneur.', 'At least one container.') },
+    ],
+    async run(params) {
+      const r = await require('./scheduler-containers').schedCtRun('restart', params.targets);
+      logEvent('scheduler.containers_restart', { done: r.done, skipped: r.skipped, errors: r.errors.length });
+      if (r.status === 'error') pushNotification({ type: 'scheduled_containers_failed', level: 'error', message: `Redémarrage planifié : ${r.message}` });
+      return { status: r.status, message: r.message };
+    },
+  },
+
+  containers_update: {
+    label: L('Mettre à jour des conteneurs gérés', 'Update managed containers'),
+    description: L(
+      'Télécharge la dernière image des conteneurs choisis et les recrée si elle a changé (même opération que le bouton « Mettre à jour » des pages). Une entrée « image partagée » met à jour tout l\'agent Go. Un conteneur absent ou désactivé est ignoré.',
+      'Pulls the latest image of the chosen containers and recreates them when it changed (same operation as the pages\' "Update" button). A "shared image" entry updates the whole Go agent. A missing or disabled container is skipped.'),
+    notifyLabel: null,
+    params: [
+      { key: 'targets', type: 'multiselect', optionsFrom: 'managed_containers', max: 30, default: [],
+        label: L('Conteneurs', 'Containers'),
+        help: L('Au moins un conteneur. Une mise à jour recrée le conteneur : coupure brève.', 'At least one container. An update recreates the container: brief outage.') },
+    ],
+    async run(params) {
+      const r = await require('./scheduler-containers').schedCtRun('update', params.targets);
+      logEvent('scheduler.containers_update', { done: r.done, skipped: r.skipped, errors: r.errors.length });
+      if (r.status === 'ok') pushNotification({ type: 'scheduled_containers_updated', level: 'success', message: `Mise à jour planifiée : ${r.message}` });
+      else if (r.status === 'error') pushNotification({ type: 'scheduled_containers_failed', level: 'error', message: `Mise à jour planifiée : ${r.message}` });
+      return { status: r.status, message: r.message };
+    },
+  },
+
+  containers_check_updates: {
+    label: L('Vérifier les mises à jour des conteneurs', 'Check container updates'),
+    description: L(
+      'Télécharge les images de tous les conteneurs gérés actifs et signale ceux dont une version plus récente est disponible, sans rien modifier (notification dans le centre de notifications).',
+      'Pulls the images of every running managed container and reports those with a newer version available, changing nothing (notification in the notifications center).'),
+    notifyLabel: null,
+    params: [],
+    async run() {
+      const r = await require('./scheduler-containers').schedCtCheckAll();
+      logEvent('scheduler.containers_check_updates', { checked: r.checked, available: r.available, errors: r.errors.length });
+      if (r.available.length) pushNotification({ type: 'container_updates_available', level: 'info', message: `Mise à jour disponible : ${r.available.join(', ')}` });
+      const parts = [`${r.checked} conteneur(s) vérifié(s)`, r.available.length ? `à mettre à jour : ${r.available.join(', ')}` : 'tous à jour'];
+      if (r.errors.length) parts.push(`erreurs : ${r.errors.join(' ; ')}`);
+      return { status: r.errors.length && !r.checked ? 'error' : 'ok', message: parts.join(' — ') };
     },
   },
 

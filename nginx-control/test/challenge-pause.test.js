@@ -26,4 +26,22 @@ check('fin de pause : snippets actifs a nouveau', () => {
   B.setChallengePaused(false);
   assert.ok(code(B.computeChallengeFiles().files.find(x => x.name === 'challenge-all.conf').content).includes('auth_request'));
 });
+console.log('\nchallenge_fail_open');
+const G = require('../lib/challenge-gate'), S = require('../lib/challenge-settings');
+check('defaut : pas de fail-open (5xx maintenu)', () => {
+  const { settings } = G.normalizeChallengeSettings(S.challengeOverridesFromText('challenge_enable: true\n'));
+  assert.strictEqual(settings.failOpen, false);
+  assert.ok(!/nc_gate_open/.test(G.buildGateSnippet(settings, 'all')));
+});
+check('true : error_page 5xx -> 204 dans /_nc_gate + location interne', () => {
+  const { settings } = G.normalizeChallengeSettings(S.challengeOverridesFromText('challenge_enable: true\nchallenge_fail_open: true\n'));
+  assert.strictEqual(settings.failOpen, true);
+  const c = code(G.buildGateSnippet(settings, 'all'));
+  assert.ok(c.includes('error_page 500 502 503 504 = @nc_gate_open;') && c.includes('location @nc_gate_open {') && c.includes('return 204;'));
+  assert.ok(c.includes('error_page 401 = @nc_challenge;'), 'le 401 (a challenger) reste intact');
+});
+check('valeur invalide refusee, defaut conserve', () => {
+  const r = G.normalizeChallengeSettings({ challenge_fail_open: 'oui' });
+  assert.strictEqual(r.settings.failOpen, false); assert.ok(r.errors.length);
+});
 console.log(`\n${pass} ok, ${fail} ko`); process.exit(fail ? 1 : 0);

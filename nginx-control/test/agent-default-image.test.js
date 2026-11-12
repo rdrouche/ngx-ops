@@ -12,7 +12,7 @@ const probe = (env) => JSON.parse(execFileSync('node', ['-e', `
   const v = B.validateOptions({ name: 'agent-1', dashboardUrl: 'https://dash.example.org' });
   const compose = v.ok ? B.buildCompose(v.value) : '';
   const envf = v.ok ? B.buildEnv(v.value, 'tok') : '';
-  console.log(JSON.stringify({ cfg: c.AGENT_DEFAULT_IMAGE, def: B.DEFAULTS.image, ok: v.ok, err: v.error, image: v.ok && v.value.image,
+  console.log(JSON.stringify({ cfg: c.AGENT_DEFAULT_IMAGE, def: B.DEFAULTS.image, ok: v.ok, err: v.error, image: v.ok && v.value.image, tag: v.ok && v.value.tag, tagCfg: c.AGENT_DEFAULT_TAG,
     compose: compose.split('\\n').find(l => l.includes('image:')), env: envf.split('\\n').find(l => l.startsWith('AGENT_IMAGE=')) }));
 `], { cwd: path.join(__dirname, '..'), env: { PATH: process.env.PATH, USERS_FILE: path.join(dir, 'users.yml'), ...env } }).toString().trim().split('\n').pop());
 
@@ -26,8 +26,13 @@ check('image privee : reprise dans les options, le .env et le compose.yml', () =
   assert.ok(r.compose.includes('registry.example.com/team/ngx-agent'), r.compose);
   assert.strictEqual(r.env, 'AGENT_IMAGE=registry.example.com/team/ngx-agent');
 });
+check('nom:tag accepté : le tag devient le tag par défaut du kit (avant : rejeté en silence)', () => {
+  const r = probe({ AGENT_DEFAULT_IMAGE: 'forge.example.fr/dockerfiles/agent:1.2' });
+  assert.strictEqual(r.cfg, 'forge.example.fr/dockerfiles/agent'); assert.strictEqual(r.tag, '1.2'); assert.strictEqual(r.tagCfg, '1.2');
+  assert.strictEqual(probe({ AGENT_DEFAULT_IMAGE: 'forge.example.fr/dockerfiles/agent' }).tag, 'latest');
+});
 check('valeur invalide (espaces, guillemets, $) : repli sur le defaut, jamais ecrite dans un .env', () => {
-  for (const bad of ['a b', 'x"y', 'img$(id)', 'img:tag with space']) assert.strictEqual(probe({ AGENT_DEFAULT_IMAGE: bad }).cfg, FALLBACK, bad);
+  for (const bad of ['a b', 'x"y', 'img$(id)', 'img:tag with space', 'img:ta$g']) assert.strictEqual(probe({ AGENT_DEFAULT_IMAGE: bad }).cfg, FALLBACK, bad);
 });
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(`\n${pass} pass, ${fail} fail`);

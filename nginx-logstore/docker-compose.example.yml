@@ -1,0 +1,48 @@
+# Exemple : log store + TimescaleDB, en conteneurs séparés.
+# Le port PostgreSQL n'est jamais publié ; seul le port de l'API l'est, sur la boucle locale
+# (placer un proxy TLS devant, ou monter un certificat et retirer LOGSTORE_INSECURE_HTTP).
+# Usage : cp sample.env logstore.env ; éditer ;
+#   docker compose --env-file logstore.env -f docker-compose.example.yml up -d
+# (--env-file est nécessaire : l'interpolation ${...} de ce fichier ne lit pas env_file:)
+services:
+  logstore-db:
+    image: timescale/timescaledb:latest-pg16   # figer une version précise en production
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: logstore
+      POSTGRES_USER: logstore
+      POSTGRES_PASSWORD: ${LOGSTORE_DB_PASSWORD:-}   # obligatoire : définir dans logstore.env (voir sample.env)
+    volumes:
+      - logstore-db-data:/var/lib/postgresql/data
+    networks: [logstore]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logstore -d logstore"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # PAS de "ports:" : la base n'est joignable que depuis le réseau compose.
+
+  logstore:
+    build:
+      context: .
+      args:
+        VERSION: ${LOGSTORE_VERSION:-dev}
+    restart: unless-stopped
+    depends_on:
+      logstore-db:
+        condition: service_healthy
+    env_file: logstore.env
+    environment:
+      LOGSTORE_DATABASE_URL: postgres://logstore:${LOGSTORE_DB_PASSWORD}@logstore-db:5432/logstore?sslmode=disable
+    ports:
+      - "127.0.0.1:8443:8443"
+    networks: [logstore]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+networks:
+  logstore:
+
+volumes:
+  logstore-db-data:

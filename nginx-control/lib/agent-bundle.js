@@ -30,7 +30,7 @@ const SAFE_TEXT_RE = /^[^\s"'`$#\\\u0000-\u001f\u007f]*$/;
 
 const DEFAULTS = {
   pollInterval: '30s', tunnelEnable: true, insecureSkipVerify: false, restartPolicy: 'always',
-  get image() { return defaultImage(); }, tag: 'latest', tokenMode: 'env', fingerprint: '',
+  get image() { return defaultImage(); }, get tag() { return cfg.AGENT_DEFAULT_TAG || 'latest'; }, tokenMode: 'env', fingerprint: '',
   relay: { enabled: false, host: '', httpPort: 8080, httpsEnabled: false, httpsPort: 8443, backendInsecure: false },
 };
 
@@ -193,4 +193,4 @@ function buildBundle(v, token) {
   return { env: buildEnv(v, token), compose: buildCompose(v), shell: buildShell(v, token), tokenMode: v.tokenMode };
 }
 
-module.exports = { DEFAULTS, get DEFAULT_IMAGE() { return defaultImage(); }, RESTART_POLICIES, TOKEN_MODES, validateOptions, storableOptions, buildEnv, buildCompose, buildShell, buildBundle };
+module.exports = { DEFAULTS, get DEFAULT_IMAGE() { return defaultImage(); }, get DEFAULT_TAG() { return cfg.AGENT_DEFAULT_TAG || 'latest'; }, RESTART_POLICIES, TOKEN_MODES, validateOptions, storableOptions, buildEnv, buildCompose, buildShell, buildBundle };

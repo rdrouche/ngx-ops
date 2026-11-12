@@ -26,6 +26,7 @@ const cfg     = require('../lib/config');
 const httpLib = require('../lib/http');
 const auth    = require('../lib/auth');
 const docker  = require('../lib/docker');
+const lifecycle = require('../lib/container-lifecycle');
 const events  = require('../lib/events');
 const { parseFlatYaml } = require('../lib/simple-yaml');
 
@@ -245,18 +246,9 @@ function register(router) {
     const cfg = getGeoipupdateCfg();
     if (!cfg?.enable) return httpLib.badRequest(res, 'geoipupdate is not enabled in geoipupdate.yml');
     const image = cfg.container_image || 'maxmindinc/geoipupdate:latest';
-    const result = await docker.pullAndCheckUpdate(image);
-    if (!result.ok) return send(res, 200, { ok: false, error: result.error });
-    let recreated = false;
-    if (result.updated) {
-      const status = await containerStatus();
-      if (status.exists) {
-        try { await startContainer(cfg); recreated = true; }
-        catch (e) { return send(res, 200, { ok: true, pulled: true, updated: true, recreated: false, recreateError: e.message }); }
-      }
-    }
-    logEvent('geoipupdate.image_update', `Image ${image} ${result.updated ? 'updated' : 'already up to date'}${recreated ? ', container recreated' : ''}`, session.username);
-    return send(res, 200, { ok: true, pulled: true, updated: result.updated, recreated });
+    const out = await lifecycle.legacyImageUpdate('geoipupdate');
+    logEvent('geoipupdate.image_update', `Image ${image} ${out.updated ? 'updated' : 'already up to date'}${out.recreated ? ', container recreated' : ''}`, session.username);
+    return send(res, 200, out);
   });
 
   /**
@@ -286,6 +278,22 @@ function register(router) {
     } catch (e) { return httpLib.serverError(res, e); }
   });
 }
+
+// ─── Cycle de vie uniforme (#104) ────────────────────────────────────────────
+lifecycle.register({
+  id: 'geoipupdate', label: 'GeoIP Update', page: 'geoip',
+  enabled: () => !!(getGeoipupdateCfg() || {}).enable,
+  containerName: () => CONTAINER_NAME,
+  image: () => (getGeoipupdateCfg() || {}).container_image || 'maxmindinc/geoipupdate:latest',
+  create: async () => {
+    const cfg = getGeoipupdateCfg();
+    if (!cfg.license_key || !String(cfg.license_key).trim()) throw lifecycle.httpError(400, 'license_key_missing', 'license_key is not set in geoipupdate.yml');
+    const image = cfg.container_image || 'maxmindinc/geoipupdate:latest';
+    const pull = await docker.pullAndCheckUpdate(image);
+    if (!pull.ok) throw new Error(`Pull de l'image ${image} echoue : ${pull.error}`);
+    return startContainer(cfg);
+  },
+});
 
 module.exports = {
   register, getGeoipupdateCfg, loadGeoipupdateConfig,

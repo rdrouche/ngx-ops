@@ -99,7 +99,7 @@ function digRender(d) {
       row.style.cssText = 'display:flex;gap:8px';
       const flag = document.createElement('span'); flag.className = 'an-flag'; flag.textContent = anFlag(c.country);
       row.appendChild(flag);
-      const name = document.createElement('span'); name.style.color = 'var(--text)'; name.textContent = c.country || '??';
+      const name = document.createElement('span'); name.style.color = 'var(--text)'; name.textContent = (c.country && c.country !== '??') ? c.country : t('analyzer.unknownCountry');
       row.appendChild(name);
       const n = document.createElement('span'); n.style.cssText = 'margin-left:auto;color:var(--text3)'; n.textContent = fmt(c.requests);
       row.appendChild(n);

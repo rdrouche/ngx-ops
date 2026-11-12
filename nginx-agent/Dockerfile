@@ -6,7 +6,7 @@
 # donc rien d autre qu un compilateur Go n est necessaire pour construire.
 
 # ─── Etape 1 : compilation ─────────────────────────────────────────────────
-FROM golang:1.24-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 
 # go.mod/go.sum d abord pour profiter du cache Docker sur les couches

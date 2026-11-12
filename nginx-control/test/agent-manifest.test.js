@@ -417,5 +417,47 @@ check('validateManifest() propage les metrics valides', () => {
   assert.deepStrictEqual(r.metrics, { cpuPercent: 12 });
 });
 
+console.log('\ngenerateAgentVhostContent() — snippets de location en relay/tunnel (#124)');
+const locSnip = [
+  { path: '/', target: 'http://127.0.0.1:8080' },
+  { path: '/v1', target: 'http://127.0.0.1:8080', snippets: ['access-log-off.conf'] },
+  { path: '/api', target: 'http://127.0.0.1:9090' },
+  { path: '/mon', target: 'http://127.0.0.1:9091', monitorIgnore: true },
+];
+const blockOf = (content, path) => { const m = content.match(new RegExp('    location ' + path.replace(/\//g, '\\/') + ' \\{\\n([\\s\\S]*?)\\n    \\}')); return m ? m[1] : null; };
+for (const mode of ['relay', 'tunnel']) {
+  const meta = { agentId: 'abc123', agentName: 'vps-1', relayTarget: 'http://198.51.100.5:34443', tunnelTarget: 'http://nginx-dashboard:3000', tunnelSecret: 's3cret' };
+  check(`${mode} : location avec snippet -> bloc dedie, meme proxy_pass, include`, () => {
+    const v = validateManifestVhost(baseVhost({ mode, locations: locSnip }));
+    const c = generateAgentVhostContent(v, v.serverNames, v.listen, meta);
+    const b = blockOf(c, '/v1');
+    assert.ok(b, 'bloc /v1 attendu');
+    assert.ok(b.includes('include snippets/access-log-off.conf;'));
+    assert.ok(b.includes(mode === 'relay' ? 'proxy_pass http://198.51.100.5:34443;' : 'proxy_pass http://nginx-dashboard:3000;'));
+    assert.ok(b.includes('proxy_set_header Host $host;'));
+    if (mode === 'tunnel') assert.ok(b.includes('X-NC-Tunnel'));
+    if (mode === 'relay') assert.ok(b.includes('proxy_http_version 1.1;'));
+  });
+  check(`${mode} : location sans snippet -> pas de bloc ; monitorIgnore seul -> bloc avec marqueur`, () => {
+    const v = validateManifestVhost(baseVhost({ mode, locations: locSnip }));
+    const c = generateAgentVhostContent(v, v.serverNames, v.listen, meta);
+    assert.strictEqual(blockOf(c, '/api'), null);
+    assert.ok(blockOf(c, '/mon').includes('# nginx-control-monitoring-ignore-location: on'));
+    assert.ok(!blockOf(c, '/').includes('include snippets/'));
+  });
+  check(`${mode} : snippets de la location "/" -> dans location /, sans bloc supplementaire`, () => {
+    const v = validateManifestVhost(baseVhost({ mode, locations: [{ path: '/', target: 'http://127.0.0.1:8080', snippets: ['x.conf'] }] }));
+    const c = generateAgentVhostContent(v, v.serverNames, v.listen, meta);
+    assert.ok(blockOf(c, '/').includes('include snippets/x.conf;'));
+    assert.strictEqual((c.match(/    location /g) || []).length, 1);
+  });
+}
+check('direct : rendu inchange (un bloc par location, cible propre)', () => {
+  const v = validateManifestVhost(baseVhost({ locations: locSnip }));
+  const c = generateAgentVhostContent(v, v.serverNames, v.listen, { agentId: 'a', agentName: 'n' });
+  assert.strictEqual((c.match(/    location /g) || []).length, 4);
+  assert.ok(c.includes('proxy_pass http://127.0.0.1:9090;'));
+});
+
 console.log(`\n${pass} pass, ${fail} fail`);
 if (fail) process.exit(1);

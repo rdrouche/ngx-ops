@@ -10,7 +10,6 @@
  */
 const assert = require('assert'), fs = require('fs'), os = require('os'), path = require('path');
 const http = require('http');
-const url = require('url');
 
 let pass = 0, fail = 0;
 const check = async (n, f) => { try { await f(); console.log('  PASS  ' + n); pass++; }
@@ -24,7 +23,7 @@ let images = {};       // name -> Id
 let pullBehavior = 'update'; // 'update' | 'same' | 'error'
 
 const fakeDaemon = http.createServer((req, res) => {
-  const parsed = url.parse(req.url, true);
+  const parsed = new URL(req.url, 'http://localhost'); // WHATWG URL (url.parse() déprécié, DEP0169, #65)
   if (req.method === 'GET' && /^\/images\/[^/]+\/json$/.test(parsed.pathname)) {
     const name = decodeURIComponent(parsed.pathname.split('/')[2]);
     if (images[name]) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ Id: images[name] })); }
@@ -32,7 +31,7 @@ const fakeDaemon = http.createServer((req, res) => {
     return;
   }
   if (req.method === 'POST' && parsed.pathname === '/images/create') {
-    const name = parsed.query.fromImage;
+    const name = parsed.searchParams.get('fromImage');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     if (pullBehavior === 'error') {
       res.write(JSON.stringify({ status: 'Pulling from ' + name }) + '\n');
