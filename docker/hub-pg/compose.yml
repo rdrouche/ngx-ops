@@ -1,0 +1,71 @@
+# Deploy NGX Ops HUB with PostgreSQL
+services:
+
+  init-perms:
+    image: alpine:3.20
+    user: root
+    restart: "no"
+    network_mode: none
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /data
+        chown -R 10001:10001 /data
+        chmod 700 /data
+    volumes:
+      - ./data:/data
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ngx-ops-hub-db
+    restart: ${RESTART_POLICY:-unless-stopped}
+    environment:
+      POSTGRES_DB: nginx_ops_hub
+      POSTGRES_USER: hub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./pg_data:/var/lib/postgresql/data
+    networks: 
+      - ngx-ops-hub
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hub -d nginx_ops_hub"]
+      interval: 10s
+      timeout: 4s
+      retries: 5
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: ["no-new-privileges:true"]
+
+  ngx-ops-hub:
+    image: forge.rdr-it.com/ngx-ops/ngx-ops/ngx-ops-hub:${HUB_TAG:-latest-pg}
+    restart: ${RESTART_POLICY:-unless-stopped}
+    env_file: ngx-ops-hub.env
+    depends_on:
+      init-perms:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      HUB_CONFIG: /config/hub.yml
+      HUB_DATA_DIR: /data
+      HUB_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    #ports:
+    #  - "127.0.0.1:${HUB_PORT:-8090}:8090"   # exposé uniquement en local : nginx fait le TLS + frontal public
+    volumes:
+      - ./data:/data
+      - ./config/hub.yml:/config/hub.yml:ro
+      # - ./certs/ca-interne.pem:/certs/ca-interne.pem:ro   # si security.extra_ca_file est utilisé
+    networks: 
+      - ngx-ops-hub
+    # Durcissement conteneur
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 256m
+
+networks:
+  ngx-ops-hub:

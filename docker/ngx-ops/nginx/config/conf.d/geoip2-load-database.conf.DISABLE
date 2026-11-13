@@ -1,0 +1,11 @@
+# name: geoip2-load-database
+# description: Permet de charger la base GeoIP par pays
+# version: 1.0.1
+
+geoip2 /geoip/GeoLite2-Country.mmdb {
+    $geoip2_data_country_iso_code country iso_code;
+}
+
+geoip2 /geoip/GeoLite2-ASN.mmdb {
+    $asn default=0 source=$remote_addr autonomous_system_number;
+}

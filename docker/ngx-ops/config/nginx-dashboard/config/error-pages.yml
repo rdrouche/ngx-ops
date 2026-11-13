@@ -1,0 +1,3 @@
+enable: false
+container_image: tarampampam/error-pages:latest
+template_name: connection

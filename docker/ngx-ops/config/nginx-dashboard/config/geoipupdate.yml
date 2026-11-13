@@ -1,0 +1,9 @@
+enable: false
+container_image: maxmindinc/geoipupdate:latest
+edition_ids: GeoLite2-City GeoLite2-Country GeoLite2-ASN
+frequency_hours: 168
+# Account
+account_id:
+license_key:
+# Absolute path from Docker host ex : /containers/ngx-ops/geoip_data
+geoip_host_path:

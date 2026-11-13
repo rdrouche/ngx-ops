@@ -1,0 +1,88 @@
+# NGX Ops Hub — configuration (copier en config/hub.yml). Toute clé absente prend sa valeur par défaut (lib/config.js).
+# Les secrets n'ont RIEN à faire ici : la clé maîtresse passe par HUB_SECRET_KEY / HUB_SECRET_KEY_FILE.
+
+server:
+  host: 0.0.0.0
+  port: 8090
+  data_dir: /data                       # SQLite (hub.sqlite) — volume à sauvegarder
+  public_base_url: https://hub.exemple.org   # contrôle de l'en-tête Origin (CSRF) derrière le reverse proxy
+  cookie_secure: true                   # false uniquement en HTTP local de développement
+  session_ttl_minutes: 480
+  trusted_proxies:                      # seuls ces pairs peuvent fournir X-Real-IP
+    - 172.16.0.0/12
+    - 127.0.0.1/32
+    - 10.0.0.0/8
+
+collector:
+  enabled: true
+  interval_seconds: 60                  # 10–3600
+  timeout_ms: 5000                      # délai global par requête
+  concurrency: 8                        # requêtes simultanées (50 instances ≈ 6 vagues × ≤ 5 s)
+  max_response_bytes: 262144
+  offline_after_failures: 3             # « hors ligne » après N échecs consécutifs
+  retention_days: 30                    # purge horaire de l'historique
+
+security:
+  mfa_policy: optional                  # required | optional
+  allow_insecure_http: false            # DEV uniquement
+  allow_private_networks: false         # true si les dashboards sont sur LAN / réseau Docker
+  allowed_cidrs: []                     # alternative plus fine : n'autoriser que ces plages privées
+  #  - 10.20.0.0/16
+  extra_ca_file: ''                     # ex. /certs/ca-interne.pem (CA interne des dashboards)
+  login_max_failures: 5
+  login_lock_minutes: 15
+  bootstrap_admin: true                 # crée « admin » au 1er démarrage (mot de passe dans les logs) si aucun compte n'existe
+
+storage:
+  driver: postgres                        
+  postgres:                             # utilisé seulement si driver: postgres — mot de passe : HUB_DB_PASSWORD_FILE (secret Docker)
+    host: postgres
+    port: 5432
+    database: nginx_ops_hub
+    user: hub
+    ssl: disable                        # disable | require | verify-full
+    pool_max: 10
+    maintenance_hours: 24               # VACUUM (ANALYZE) planifié ; 0 = désactivé (l'autovacuum PostgreSQL reste actif)
+
+modules:                                
+  enabled: true
+  list: [alerts, inventory, traffic, security, ops, monitoring, reports]
+  indicators: { enabled: false }        # corrélation par IP = données personnelles : opt-in explicite (+ expose_ips côté dashboard)
+  intervals_s: { alerts: 60, inventory: 300, traffic: 300, security: 300, ops: 120, monitoring: 300, reports: 1800, indicators: 300 }
+  hours: 24
+  alerts_keep_days: 30
+
+logstore:                               
+  enabled: false
+  url: ""                               # https://logstore.exemple.tld (mêmes règles réseau que les dashboards : allow_private_networks / allowed_cidrs)
+  hours: 24                             # fenêtre par défaut (1..744)
+  cache_s: 60                           # une requête sortante par fenêtre et par minute au plus
+  indicators:                           # corrélation par IP avec le log store : DONNÉES PERSONNELLES, opt-in, admin seulement, jamais persistée
+    enabled: false
+    hours: 24                           # fenêtre (1..168 ; le log store limite à 7 j)
+    min_instances: 2                    # IP vue par au moins N instances
+    limit: 200                          # 10..500
+  explorer:                             # page « Explorateur » = logs BRUTS (IP, chemins, user-agents) relayés à la demande : DONNÉES PERSONNELLES
+    enabled: true                       # opt-in strict ; admin seulement (indicators:view) ; rien n'est stocké par le Hub, l'audit ne garde que des noms de filtres et des compteurs
+    page_size: 100                      # lignes par page (10..500) ; période ≤ 31 j (campagnes : ≤ 7 j, limite du log store)
+
+backups:                                # contrat dashboard v12.76.0 : push (POST /api/hub/v1/backups) + pull (manifest/archive)
+  enabled: true
+  dir: backups                          # dans data_dir ; archives adressées par sha256 (à sauvegarder avec /data)
+  max_archive_mb: 256
+  retention_days: 30                    # plafond : rétention effective = min(X-Retention-Days du dashboard, cette valeur)
+  keep_max_per_instance: 100
+  alert_after_hours: 36                 # alerte si une instance (push ou pull configuré) n'a rien sauvegardé depuis N h
+  pull_enabled: true
+  pull_interval_hours: 24
+  push_rate_per_hour: 30                # par IP
+  upload_timeout_s: 600
+
+ui:
+  default_theme: light                  # light | dark (le choix utilisateur prime)
+  default_language: fr                  # fr | en (le sélecteur de l’en-tête prime)
+  dashboard_deeplink_path: /            # chemin ajouté à l'URL de l'instance pour « Ouvrir le dashboard »
+
+# Désactiver une feature sans toucher au code :
+features: {}
+#  audit: false

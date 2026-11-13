@@ -1,0 +1,68 @@
+services:
+  nginx:
+    image: forge.rdr-it.com/registry/nginx/nginx:${NGINX_TAG:-1.30.6}
+    restart: ${RESTART_POLICY:-always}
+    container_name: ${NGINX_CONTAINER_NAME:-nginx}
+    networks:
+      - nginx-net
+    ports:
+      - 80:80
+      - 443:443
+    environment:
+      - NGINX_WORKER_PROCESSES="${NGINX_WORKER_PROCESSES:-auto}"
+      - NGINX_WORKER_CONNECTIONS="${NGINX_WORKER_CONNECTIONS:-768}"
+    volumes:
+      - ./nginx/config/conf.d:/etc/nginx/conf.d
+      - ./nginx/config/sites:/etc/nginx/sites
+      - ./nginx/config/snippets:/etc/nginx/snippets
+      - ./nginx/config/streams:/etc/nginx/streams
+      - ./nginx/webroot:/var/www
+      - ./nginx/logs:/var/log/nginx
+      - ./nginx/cache:/var/cache/nginx
+      - ./certificats/ssl:/ssl
+      - ./certificats/certbot:/etc/letsencrypt
+      - ./geoip_data:/geoip
+  
+  ngx-ops-dashboard:
+    image: forge.rdr-it.com/ngx-ops/ngx-ops/ngx-ops-dashboard:${NGX_OPS_DASHBOARD_TAG:-latest}
+    restart: ${RESTART_POLICY:-always}
+    container_name: ${NGX_DHB_CONTAINER_NAME:-ngx-ops-dashboard}
+    networks:
+      - nginx-net
+    # Port config removed, use compose.override.yml for publish directly
+    env_file:
+      - ngx-ops.env
+    environment:
+      - NGINX_CONTAINER=${NGINX_CONTAINER_NAME:-nginx}
+      - NGINX_NETWORK=${NGINX_NETWORK}
+      - NGINX_VTS_URL=http://${NGINX_CONTAINER_NAME}:8080/status.json
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mapping Folders
+      - ./nginx/config/conf.d:/nginx/conf
+      - ./nginx/config/sites:/nginx/sites
+      - ./nginx/config/snippets:/nginx/snippets
+      - ./nginx/config/streams:/nginx/streams
+      - ./nginx/cache:/var/cache/nginx
+      - ./nginx/logs:/nginx/logs:ro
+      - ./certificats:/certificats
+      # Third part config
+      - ./config/nginx-dashboard/config:/config
+      - ./geoip_data:/geoip
+      # GoAccess data (db + rapports generes)
+      - ./config/nginx-dashboard/goaccess:/nginx/goaccess
+      # Backups ZIP locaux
+      - ./backups:/nginx/backups
+      # Git workdir (clone the repo inside the container)
+      - git-work:/git-work
+    depends_on:
+      - nginx
+
+networks:
+  nginx-net:
+    name: nginx-net
+    driver: bridge
+    enable_ipv6: false
+
+volumes:
+  git-work:
