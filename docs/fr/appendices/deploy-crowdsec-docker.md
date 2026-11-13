@@ -4,7 +4,7 @@
 
 Contrairement à un simple système de blocage basé sur des listes d'adresses IP, CrowdSec s'appuie sur des **scénarios de détection** pour identifier différents types d'attaques, puis produit des décisions qui peuvent être exploitées par des **bouncers** afin d'appliquer une remédiation, par exemple en bloquant une adresse IP.
 
-Dans cette partie, nous allons uniquement voir comment **déployer CrowdSec afin de l'intégrer à Nginx Control**.
+Dans cette partie, nous allons uniquement voir comment **déployer CrowdSec afin de l'intégrer à NGX Ops**.
 
 Pour une installation complète de CrowdSec avec la configuration des bouncers et la mise en place de la remédiation, vous trouverez plusieurs ressources complémentaires à la fin de cette page.
 
@@ -38,7 +38,7 @@ networks:
         - subnet: 10.199.0.0/24
 ```
 
-> **À noter :** cet exemple monte directement le répertoire de logs de Nginx Control dans le conteneur CrowdSec. Adaptez le chemin `/containers/nginx/nginx/logs` à votre installation.
+> **À noter :** cet exemple monte directement le répertoire de logs de NGX Ops dans le conteneur CrowdSec. Adaptez le chemin `/containers/nginx/nginx/logs` à votre installation.
 
 Démarrer ensuite CrowdSec :
 
@@ -86,7 +86,7 @@ labels:
 
 Le chemin `/var/log/nginx/*.log` correspond au chemin **vu depuis le conteneur CrowdSec**.
 
-Le montage Docker défini précédemment permet de faire correspondre ce chemin aux journaux générés par Nginx Control sur l'hôte.
+Le montage Docker défini précédemment permet de faire correspondre ce chemin aux journaux générés par NGX Ops sur l'hôte.
 
 Redémarrer ensuite CrowdSec afin de prendre en compte la nouvelle configuration :
 
@@ -106,17 +106,17 @@ Cette commande permet notamment de vérifier que les fichiers de logs sont bien 
 
 Si les journaux Nginx sont correctement détectés, ils apparaissent dans les métriques de CrowdSec.
 
-## Intégration avec Nginx Control
+## Intégration avec NGX Ops
 
-À ce stade, CrowdSec est capable d'analyser les journaux générés par Nginx Control.
+À ce stade, CrowdSec est capable d'analyser les journaux générés par NGX Ops.
 
 Cette configuration constitue la partie **détection**.
 
-Elle permet notamment à Nginx Control de s'appuyer sur CrowdSec pour obtenir des informations sur les adresses IP ayant fait l'objet de décisions ou de détections.
+Elle permet notamment à NGX Ops de s'appuyer sur CrowdSec pour obtenir des informations sur les adresses IP ayant fait l'objet de décisions ou de détections.
 
 Pour mettre en place le **blocage automatique** des adresses IP, il faut ensuite configurer un bouncer adapté à votre architecture.
 
-> **CrowdSec et Nginx Control sont complémentaires :** Nginx Control fournit l'administration et la visibilité autour de Nginx, tandis que CrowdSec apporte son moteur de détection comportementale et, avec un bouncer, la capacité de mettre en œuvre une remédiation automatique.
+> **CrowdSec et NGX Ops sont complémentaires :** NGX Ops fournit l'administration et la visibilité autour de Nginx, tandis que CrowdSec apporte son moteur de détection comportementale et, avec un bouncer, la capacité de mettre en œuvre une remédiation automatique.
 
 ## Ressources complémentaires
 

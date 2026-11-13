@@ -1,4 +1,4 @@
-# Déployer Ninx et Nginx Control
+# Installer NGX Ops
 
 ## Prérequis
 
@@ -8,32 +8,31 @@ Un serveur Linux avec Docker et Docker compose d'installé
 
 ## Préparation des dossiers
 
-Sur votre serveur, créer un dossier pour les différents fichiers et dossier du stack.
+Sur votre serveur, créer un dossier pour les fichiers et dossiers de la stack.
 
-> Dans cette documentation utilise le dossier `/containers/nginx`
+> Cette documentation utilise le dossier `/containers/ngxops`
 
 Créer le dossier : 
 
 ```bash
-mkdir -p /containers/nginx
-cd /containers/nginx
+mkdir -p /containers/ngxops
+cd /containers/ngxops
 ```
 
 ## Cloner les fichiers
 
-Les fichiers et dossiers du stacks sont disponibles à ces emplacements : 
-- https://forge.rdr-it.com/romain/Docker-Compose/src/branch/main/ReverseProxy
-- https://github.com/rdrouche/Docker-Compose/tree/main/ReverseProxy
+Les fichiers et dossiers de la stack sont disponibles à cet emplacement : 
+- https://forge.rdr-it.com/ngx-ops/compose
 
 Utiliser la commande ci-dessous pour cloner le répertoire depuis le dépôt : 
 
 ```bash
-bash <(wget -qO- https://forge.rdr-it.com/romain/Docker-Compose/raw/branch/main/get.sh) ReverseProxy
+bash <(wget -qO- https://forge.rdr-it.com/ngx-ops/compose/raw/branch/main/deploy.sh) ngx-ops
 ```
 
 ## Configuration de base
 
-Commencer par copier le `[sample.env](https://forge.rdr-it.com/romain/Docker-Compose/src/branch/main/ReverseProxy/sample.env)` en le nommant .env et éditer le.
+Commencer par copier le [`sample.env`](https://forge.rdr-it.com/ngx-ops/compose/src/branch/main/ngx-ops/sample.env) en le nommant `.env`, puis l'éditer. Aucun secret n'est obligatoire pour démarrer : voir [Variables d'environnement](environment.md).
 
 ```bash
 cp sample.env .env
@@ -51,28 +50,28 @@ services:
 
 ## Démarrer les conteneurs
 
-Télécharger les conteneurs et démarrer les : 
+Télécharger les images et démarrer les conteneurs : 
 
 ```bash
 docker compose up
 ```
 
-> Les images vont être téléchargé puis les conteneurs seront démarrés
+> Les images sont téléchargées, puis les conteneurs démarrent.
 
-> L'absense du paramètre `-d` vous permet d'avoir les logs et vérifier les conteneurs démarrent et d'**afficher le mot de passe en clair du compte admin**.
+> En l'absence du paramètre `-d`, vous voyez les journaux des conteneurs, ce qui permet de vérifier leur démarrage et de relever le **mot de passe du compte admin**, affiché une seule fois.
 > 
-> Depuis Debian, cliquer sur la touche **d** pour détacher et faire fonctionner les conteneurs en arrières plan.
+> Une fois le mot de passe noté, appuyer sur la touche **d** détache l'affichage et laisse les conteneurs tourner en arrière-plan (versions récentes de Docker Compose). À défaut, `Ctrl+C` arrête les conteneurs : relancer alors `docker compose up -d`.
 
 ## Accéder au Dashboard
 
-Depuis un navigateur aller à l'URL : http://ip:3000 qui vous emene sur la page d'authentification.
+Depuis un navigateur, aller à l'adresse `http://ip:3000`, qui ouvre la page d'authentification.
 
 - Identifiant : admin
-- Mot de passe : celui afficher dans les logs des conteneurs
+- Mot de passe : celui affiché dans les journaux des conteneurs. Si vous l'avez perdu : `docker compose logs nginx-dashboard`
 
 <img src="https://static.rdr-it.com/docs/nginx-dashboard/nginxdash-001-login.png" width="800" />
 
-Une fois connecté, vous arrivez sur page qui vous affiche des métriques sur les requetes qui sont issue de Nginx VTS
+Une fois connecté, vous arrivez sur une page qui affiche les métriques des requêtes issues de Nginx VTS.
 
 <img src="https://static.rdr-it.com/docs/nginx-dashboard/nginxdash-002-overview.png" width="800" />
 

@@ -1,8 +1,8 @@
 # Configuration des logs
 
-La première étape pour pouvoir exploiter les journaux dans **Nginx Control** consiste à configurer les `access.log` de vos hôtes virtuels.
+La première étape pour pouvoir exploiter les journaux dans **NGX Ops** consiste à configurer les `access.log` de vos hôtes virtuels.
 
-Comme **Nginx Control** utilise Nginx de manière classique, il suffit d'ajouter la directive `access_log` dans vos hôtes virtuels :
+Comme **NGX Ops** utilise Nginx de manière classique, il suffit d'ajouter la directive `access_log` dans vos hôtes virtuels :
 
 ```nginx
 access_log /var/log/nginx/<server-name>.access.log;
@@ -14,7 +14,7 @@ Cette configuration permet d'enregistrer les requêtes HTTP reçues par chaque h
 
 Les journaux peuvent rapidement devenir volumineux, notamment pour les sites Internet qui génèrent de nombreuses requêtes vers des fichiers statiques tels que les fichiers JavaScript, CSS, images ou polices.
 
-Pour limiter le volume de données à analyser, **Nginx Control** fournit le fichier [`logging-config.conf`](https://forge.rdr-it.com/Nginx/reference-files/src/branch/main/conf/logging-config.conf).
+Pour limiter le volume de données à analyser, **NGX Ops** fournit le fichier [`logging-config.conf`](https://forge.rdr-it.com/Nginx/reference-files/src/branch/main/conf/logging-config.conf).
 
 Ce fichier contient notamment un `map` permettant d'identifier les requêtes vers les ressources statiques afin de pouvoir les exclure des journaux.
 
@@ -75,4 +75,4 @@ Pour l'utiliser, il suffit d'inclure le snippet dans votre hôte virtuel :
 include snippets/logging.conf;
 ```
 
-Cette approche permet de conserver une configuration simple lorsque vous gérez de nombreux hôtes virtuels, tout en fournissant à **Nginx Control** un fichier de logs unique à analyser.
+Cette approche permet de conserver une configuration simple lorsque vous gérez de nombreux hôtes virtuels, tout en fournissant à **NGX Ops** un fichier de logs unique à analyser.

@@ -2,16 +2,16 @@
 
 Les version de Nginx sont compilés avec le module [geopip2](https://nginx-extras.getpagespeed.com/modules/geoip2/) qui permet d'utiliser les bases de données [MaxMind](https://www.maxmind.com/en/home) pour determiner la provenance géographique des requetes reçu sur votre reverse proxy.
 
-Les bases de données de MaxMind sont nécéssaire pour plusieurs fonctionnalités de **Nginx Control** :
+Les bases de données de MaxMind sont nécéssaire pour plusieurs fonctionnalités de **NGX Ops** :
 
 - Carte en temps réél
 - Analyse géographique des requetes
 - Résumé périodique
 - Logs en directe
 
-En plus d'être utiliser dans **Nginx Control**, vous allez pouvoir utiliser ces bases de données dans vos configurations d'hôtes virtuels pour filtrer le trafic sur votre site.
+En plus d'être utiliser dans **NGX Ops**, vous allez pouvoir utiliser ces bases de données dans vos configurations d'hôtes virtuels pour filtrer le trafic sur votre site.
 
-**Nginx Control** s'appuie sur 3 bases de données : 
+**NGX Ops** s'appuie sur 3 bases de données : 
 
 - GeoLite2-City : qui permet de determiné la ville d'origine
 - GeoLite2-Country : qui permet de determiné le pays d'orgine
@@ -34,7 +34,7 @@ Puis créer une nouvelle clé que l'on va utiliser pour le conteneur geoipupdate
 
 > Au passage noter votre identifiant **Account ID**
 
-## Configuration dans Nginx Control
+## Configuration dans NGX Ops
 
 Depuis le menu aller Integration / GeoIP, sélectionner le modèle de configuration et copier le.
 
@@ -63,7 +63,7 @@ Patienter quelques secondes pendant le démarrage du conteneur et de la récupé
 
 <img src="https://static.rdr-it.com/docs/nginx-dashboard/nginxdash-013-geoip.png" width="800" />
 
-Les bases de données MaxMind peuvent maintenant être utilisé avec Nginx et Nginx Control.
+Les bases de données MaxMind peuvent maintenant être utilisé avec Nginx et NGX Ops.
 
 ## Utiliser le Géolocalisation dans vos hôtes virtuels
 
@@ -144,7 +144,7 @@ server{
     if ($allow_from_france = 0) { return 403; }
 
     location / {
-        http://192.168.1.1;
+        proxy_pass http://192.168.1.1;
     }
 }
 ```
@@ -187,7 +187,7 @@ server{
     if ($block_from_france = 1) { return 403; }
 
     location / {
-        http://192.168.1.1;
+        proxy_pass http://192.168.1.1;
     }
 }
 ```
@@ -245,7 +245,7 @@ server{
     if ($allow_from_france_and_private_ips = 0) { return 403; }
 
     location / {
-        http://192.168.1.1;
+        proxy_pass http://192.168.1.1;
     }
 }
 ```
@@ -271,7 +271,7 @@ Créez un fichier de configuration dans `./nginx/config/conf.d/`. Ce fichier doi
 ```nginx
 # file : allow-from-france-and-private-ips-and-bots.conf
 
-map "$geoip2_data_country_iso_code:is_good_bot:$is_private_ip" $allow_from_france_and_private_ips_and_bots {
+map "$geoip2_data_country_iso_code:$is_good_bot:$is_private_ip" $allow_from_france_and_private_ips_and_bots {
     default 0;           # Par défaut, on interdit le trafic
     "~^FR:" 1;           # Si le code pays ISO est FR (France), on autorise le trafic
     "~:1:"  1;           # Si la requête provient d'un bot autorisé, on autorise le trafics
@@ -316,7 +316,7 @@ server{
     if ($allow_from_france_and_private_ips_and_bots = 0) { return 403; }
 
     location / {
-        http://192.168.1.1;
+        proxy_pass http://192.168.1.1;
     }
 }
 ```

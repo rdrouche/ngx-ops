@@ -18,7 +18,7 @@ allowed_server_name_patterns:
 
 <img src="https://static.rdr-it.com/docs/nginx-dashboard/nginxdash-039-autodocker.png" width="800" />
 
-Rechargez ensuite l'interface **Nginx Control** avec la touche **F5** afin que le nouveau menu soit disponible dans la navigation.
+Rechargez ensuite l'interface **NGX Ops** avec la touche **F5** afin que le nouveau menu soit disponible dans la navigation.
 
 <img src="https://static.rdr-it.com/docs/nginx-dashboard/nginxdash-040-autodocker.png" width="800" />
 
@@ -58,7 +58,7 @@ networks:
     external: true
 ```
 
-Les labels permettent à **Nginx Control** de déterminer comment publier le conteneur :
+Les labels permettent à **NGX Ops** de déterminer comment publier le conteneur :
 
 * `nginx-control.enable=true` : active la publication du conteneur ;
 * `nginx-control.vhost.server_name` : définit le nom DNS du VHost ;
@@ -71,7 +71,7 @@ Les labels permettent à **Nginx Control** de déterminer comment publier le con
 
 Démarrez le conteneur.
 
-Après quelques secondes, celui-ci doit apparaître dans Nginx Control **en attente d'approbation**.
+Après quelques secondes, celui-ci doit apparaître dans NGX Ops **en attente d'approbation**.
 
 Cliquez sur **Approuver** pour autoriser sa publication.
 
@@ -85,4 +85,4 @@ La configuration générée peut être consultée depuis **CONFIGURATION → Fic
 
 <img src="https://static.rdr-it.com/docs/nginx-dashboard/nginxdash-043-autodocker.png" width="800" />
 
-Cette configuration est générée automatiquement à partir des labels Docker du conteneur. Il est donc possible de modifier la publication directement depuis le fichier `compose.yml`, puis de laisser **Nginx Control** détecter les changements et mettre à jour la configuration Nginx.
+Cette configuration est générée automatiquement à partir des labels Docker du conteneur. Il est donc possible de modifier la publication directement depuis le fichier `compose.yml`, puis de laisser **NGX Ops** détecter les changements et mettre à jour la configuration Nginx.

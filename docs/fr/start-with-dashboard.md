@@ -1,4 +1,4 @@
-# Commencer à utiliser le reverse proxy
+# Commencer à utiliser NGX Ops
 
 Dans cette partie, nous allons avoir comment prendre en main votre nouveau reverse proxy en créant votre premier virtual host depuis le terminal.
 

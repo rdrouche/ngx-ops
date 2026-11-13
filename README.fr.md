@@ -37,8 +37,6 @@ Un seul numéro de version couvre toute la suite (voir [`VERSION.md`](VERSION.md
 | Agent | `nginx-agent/` | Publie les conteneurs d'un hôte Docker distant |
 | Hub | `nginx-hub/` | Vue globale multi-instances et sauvegardes |
 | Log store | `nginx-logstore/` | Journaux centralisés (PostgreSQL/TimescaleDB) et API |
-| Documentation | `ngx-ops-docs/` | Site de documentation (FR et EN) |
-| Site web | `ngx-ops-website/` | Site du projet |
 
 Les images sont publiées dans le registre `forge.rdr-it.com/ngx-ops/ngx-ops`. Utilisez un tag numérique en production : le tag `nightly` est une construction d'essai.
 
@@ -69,11 +67,11 @@ Les tickets et suggestions sont les bienvenus dans le suivi des tickets du dép�
 
 ## Sécurité
 
-Ne signalez pas une vulnérabilité dans un ticket public. Contactez le mainteneur en privé : [contact à définir].
+Ne signalez pas une vulnérabilité dans un ticket public. Contactez le mainteneur en privé.
 
 ## Licence
 
-[Licence à définir : ajouter un fichier `LICENSE` à la racine du dépôt.]
+MIT
 
 ## Auteur
 

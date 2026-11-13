@@ -32,7 +32,7 @@ Le conteneur est démarré pour servir les pages d'erreur personnalisées.
 
 ## Configurer les pages d'erreurs personnalisées dans les hôtes virtuels
 
-Pour servir les pages d'erreurs personnalisées, il faut utiliser le snippet [`global-error.conf`](https://forge.rdr-it.com/Nginx/reference-files/src/branch/main/snippets/global-error.conf)
+Pour servir les pages d'erreurs personnalisées, il faut utiliser le snippet [`global-error.conf`](https://forge.rdr-it.com/ngx-ops/reference-files/src/branch/main/snippets/global-error.conf)
 
 Dans le bloc server{...} ajouter l'appel du snippet : 
 
@@ -45,7 +45,7 @@ server{
     include snippets/global-error.conf;
     
     location / {
-        http://192.168.1.1;
+        proxy_pass http://192.168.1.1;
     }
 }
 ```

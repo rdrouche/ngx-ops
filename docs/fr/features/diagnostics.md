@@ -14,7 +14,7 @@ Elle regroupe plusieurs informations permettant d'avoir rapidement une vue d'ens
 
 ## Vue d'ensemble
 
-Cette section présente les informations générales de configuration du VHost dans **Nginx Control**.
+Cette section présente les informations générales de configuration du VHost dans **NGX Ops**.
 
 Elle permet notamment d'avoir une vue rapide de la configuration du VHost et des éléments qui le composent.
 
@@ -22,7 +22,7 @@ Elle permet notamment d'avoir une vue rapide de la configuration du VHost et des
 
 Cette section permet de tester individuellement les backends utilisés par les directives `proxy_pass`.
 
-Pour chaque backend, **Nginx Control** effectue un test à l'aide de `curl`.
+Pour chaque backend, **NGX Ops** effectue un test à l'aide de `curl`.
 
 Le test avec `curl -v` permet d'aller plus loin en affichant notamment les en-têtes HTTP retournés par le backend.
 
@@ -61,7 +61,7 @@ Elle permet de consulter la configuration utilisée par Nginx depuis le diagnost
 
 ## Flags de personnalisation
 
-Comme pour les autres fonctionnalités d'analyse de **Nginx Control**, il est possible de désactiver le diagnostic pour un VHost ou pour un fichier de configuration.
+Comme pour les autres fonctionnalités d'analyse de **NGX Ops**, il est possible de désactiver le diagnostic pour un VHost ou pour un fichier de configuration.
 
 ### Exclure un fichier d'hôtes virtuels
 

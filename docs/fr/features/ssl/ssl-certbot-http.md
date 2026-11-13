@@ -14,9 +14,9 @@ Ce dossier est monté dans le conteneur Nginx à l'emplacement :
 
 ## Principe de fonctionnement
 
-Un conteneur Certbot est démarré en permanence en parallèle de **Nginx Control**. Son rôle est uniquement de gérer le renouvellement des certificats existants.
+Un conteneur Certbot est démarré en permanence en parallèle de **NGX Ops**. Son rôle est uniquement de gérer le renouvellement des certificats existants.
 
-Lorsqu'un nouveau certificat doit être généré, **Nginx Control** démarre un conteneur Certbot éphémère dédié à cette demande.
+Lorsqu'un nouveau certificat doit être généré, **NGX Ops** démarre un conteneur Certbot éphémère dédié à cette demande.
 
 Le certificat généré est ensuite conservé dans le répertoire partagé :
 
@@ -33,7 +33,7 @@ Le certificat généré est ensuite conservé dans le répertoire partagé :
 ```yaml
 enable: true
 email: user@domain.tld
-stagging: false
+staging: false
 container_image: certbot/certbot:latest
 webroot_host_path: /containers/nginx/nginx/webroot
 certs_host_path: /containers/nginx/certificats/certbot
@@ -44,7 +44,7 @@ si vous utilisez un service ACME privé
 ```yaml
 enable: true
 email: user@domain.tld
-stagging: false
+staging: false
 server: https://acme.domain.tld:9000/acme/acme/directory
 ca_bundle_host_path: /path/file/ca-local-root.crt
 container_image: certbot/certbot:latest
@@ -58,13 +58,13 @@ certs_host_path: /containers/nginx/certificats/certbot
 
 ## Demander un certificat par challenge HTTP et configurer l'hôte virtuel
 
-Contrairement à ce que vous pouvez connaître avec **Nginx Control**, il ne suffit pas de créer un hôte virtuel sur le port 80, de demander un certificat, puis de laisser **Nginx Control** configurer automatiquement l'hôte virtuel.
+Contrairement à ce que vous pouvez connaître avec **NGX Ops**, il ne suffit pas de créer un hôte virtuel sur le port 80, de demander un certificat, puis de laisser **NGX Ops** configurer automatiquement l'hôte virtuel.
 
-Ce fonctionnement est volontaire. **Nginx Control** est conçu pour être utilisé selon une approche **GitOps** et ne doit pas disposer de droits d'écriture sur le dépôt contenant la configuration.
+Ce fonctionnement est volontaire. **NGX Ops** est conçu pour être utilisé selon une approche **GitOps** et ne doit pas disposer de droits d'écriture sur le dépôt contenant la configuration.
 
 La génération d'un certificat et la création de l'hôte virtuel sont donc deux opérations distinctes. Il est nécessaire de passer par plusieurs étapes afin de générer le certificat, récupérer les informations nécessaires, puis intégrer sa configuration dans le dépôt Git.
 
-Cette approche permet de conserver **Git comme source de vérité** et d'éviter qu'une modification effectuée depuis l'interface de **Nginx Control** puisse directement modifier la configuration versionnée.
+Cette approche permet de conserver **Git comme source de vérité** et d'éviter qu'une modification effectuée depuis l'interface de **NGX Ops** puisse directement modifier la configuration versionnée.
 
 
 Nous allons partir de l'exemple utilisé au début de cette documentation :

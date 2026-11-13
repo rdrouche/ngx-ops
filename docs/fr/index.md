@@ -1,6 +1,6 @@
 # Reverse proxy Nginx avec interface Web
 
-## Présentation
+## Présentation de NGX Ops
 
 **Nginx, sans compromis.**
 
@@ -49,6 +49,12 @@ Vous conservez la puissance et la flexibilité de Nginx, notamment l'utilisation
 
 L'objectif n'est donc pas de remplacer Nginx par une nouvelle solution, mais de fournir **un environnement complet autour de Nginx pour faciliter son déploiement, son administration, sa supervision et son intégration avec d'autres outils.**
 
+
+## Les composants de la suite
+
+Le cœur de la stack est un Nginx et son dashboard. Autour, des composants facultatifs ajoutent l'analyse des journaux, la protection, le pilotage de serveurs distants, la supervision de plusieurs installations et la conservation des journaux : l'analyseur, le WAF émulé, le challenge, l'agent, le Hub et le log store. Chacun reste utilisable seul.
+
+Voir [Architecture de la suite](architecture.md) pour les rôles et les flux, et [Versions et mise à jour](versions.md) pour le numéro de version unique de la suite.
 
 ## Concept d'utilisation de Nginx
 
@@ -99,9 +105,11 @@ Le fichier n’étant alors plus chargé par Nginx, la configuration peut être 
 
 Pour configurer votre reverse proxy, trois images Docker sont disponibles, selon les fonctionnalités dont vous avez besoin :
 
-- Nginx standard : basée sur la version stable de Nginx (1.30.4) ;
-- Nginx avec ModSecurity : permet d’ajouter des fonctionnalités WAF à Nginx (1.30.4-waf) ;
-- Nginx avec Coraza : intègre le WAF nouvelle génération Coraza (1.30.4-coraza). Cette version est actuellement considérée comme expérimentale.
+- Nginx standard : basée sur la version stable de Nginx (1.30.6) ;
+- Nginx avec ModSecurity : permet d’ajouter des fonctionnalités WAF à Nginx (1.30.6-waf) ;
+- Nginx avec Coraza : intègre le WAF nouvelle génération Coraza (1.30.6-coraza). Cette version est actuellement considérée comme expérimentale.
+
+Les images suivent la version stable publiée par nginx.org : le numéro ci-dessus est celui de la rédaction et évolue avec les mises à jour. Le tag exact figure dans le fichier `sample.env` de la stack.
 
 Le fonctionnement et la configuration de Nginx restent identiques quelle que soit l’image utilisée. Le choix de l’image permet simplement d'activer ou non les fonctionnalités WAF dont vous avez besoin.
 

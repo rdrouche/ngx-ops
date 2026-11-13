@@ -37,8 +37,6 @@ A single version number covers the whole suite (see [`VERSION.md`](VERSION.md)).
 | Agent | `nginx-agent/` | Publishes the containers of a remote Docker host |
 | Hub | `nginx-hub/` | Global multi-instance view and backups |
 | Log store | `nginx-logstore/` | Centralized logs (PostgreSQL/TimescaleDB) and API |
-| Documentation | `ngx-ops-docs/` | Documentation site (FR and EN) |
-| Website | `ngx-ops-website/` | Project website |
 
 Images are published in the registry `forge.rdr-it.com/ngx-ops/ngx-ops`. Use a numeric tag in production: the `nightly` tag is a test build.
 
@@ -69,11 +67,11 @@ Issues and suggestions are welcome in the repository issue tracker. Please open 
 
 ## Security
 
-Please do not report a vulnerability in a public issue. Contact the maintainer privately: [contact to be defined].
+Please do not report a vulnerability in a public issue. Contact the maintainer privately.
 
 ## License
 
-[License to be defined: add a `LICENSE` file at the root of the repository.]
+MIT
 
 ## Author
 

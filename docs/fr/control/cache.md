@@ -1,6 +1,6 @@
-# Contrôle du cache Nginx avec Nginx Control
+# Contrôle du cache Nginx avec NGX Ops
 
-**Nginx Control** permet de gérer le cache Nginx des hôtes virtuels lorsque celui-ci est configuré.
+**NGX Ops** permet de gérer le cache Nginx des hôtes virtuels lorsque celui-ci est configuré.
 
 Nginx est capable de mettre en cache les réponses provenant du serveur backend afin d'éviter de solliciter ce dernier à chaque requête. Cette fonctionnalité est particulièrement intéressante pour les fichiers statiques tels que les fichiers **JavaScript, CSS, images, polices**, etc.
 
@@ -17,7 +17,7 @@ Depuis le menu :
 
 **CONTROLE → Nginx Cache**
 
-Nginx Control permet d'obtenir une vue d'ensemble des caches configurés sur Nginx.
+NGX Ops permet d'obtenir une vue d'ensemble des caches configurés sur Nginx.
 
 Pour chaque répertoire de cache, l'interface affiche notamment :
 
@@ -36,13 +36,13 @@ Depuis cette page, il est possible de :
 
 ## Configurer un cache dans un hôte virtuel
 
-La gestion du cache par Nginx Control nécessite au préalable d'avoir configuré un cache dans le VHost.
+La gestion du cache par NGX Ops nécessite au préalable d'avoir configuré un cache dans le VHost.
 
 ### Cache des fichiers statiques
 
 L'exemple suivant configure un cache destiné aux ressources statiques d'un site :
 
-```nginx id="u8h3fw"
+```nginx
 proxy_cache_path /var/cache/nginx/myvhost_static_file
     levels=1:2
     keys_zone=cache_myvhost_static_file:10m
@@ -99,7 +99,7 @@ Même si la réponse est générée dynamiquement par PHP, le résultat peut êt
 
 On peut également utiliser un cache distinct pour les ressources statiques.
 
-```nginx id="z5m9jp"
+```nginx
 proxy_cache_path /var/cache/nginx/myvhost_static_file
     levels=1:2
     keys_zone=cache_myvhost_static_file:10m

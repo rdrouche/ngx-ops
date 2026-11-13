@@ -12,19 +12,19 @@ Ce dossier est monté dans le conteneur Nginx à l'emplacement :
 /etc/letsencrypt
 ```
 
-Ce choix permet de conserver la même arborescence que celle utilisée par une installation standard de Nginx avec Certbot. Cela facilite une éventuelle migration vers **Nginx Control** et permet également de conserver les liens symboliques créés par Certbot.
+Ce choix permet de conserver la même arborescence que celle utilisée par une installation standard de Nginx avec Certbot. Cela facilite une éventuelle migration vers **NGX Ops** et permet également de conserver les liens symboliques créés par Certbot.
 
-Historiquement, la génération des certificats avec un **DNS Challenge** était réalisée en dehors de **Nginx Control**. Il était alors nécessaire de configurer manuellement un conteneur Certbot dans le fichier `compose.yml` du stack.
+Historiquement, la génération des certificats avec un **DNS Challenge** était réalisée en dehors de **NGX Ops**. Il était alors nécessaire de configurer manuellement un conteneur Certbot dans le fichier `compose.yml` du stack.
 
-Depuis la version **12.4**, la génération des certificats DNS Challenge est directement intégrée à **Nginx Control**.
+Depuis la version **12.4**, la génération des certificats DNS Challenge est directement intégrée à **NGX Ops**.
 
 > ⚠️ **Attention :** seul le DNS Challenge a été testé en conditions de production.
 
 ## Principe de fonctionnement
 
-Un conteneur Certbot est démarré en permanence en parallèle de **Nginx Control**. Son rôle est uniquement de gérer le renouvellement des certificats existants.
+Un conteneur Certbot est démarré en permanence en parallèle de **NGX Ops**. Son rôle est uniquement de gérer le renouvellement des certificats existants.
 
-Lorsqu'un nouveau certificat doit être généré, **Nginx Control** démarre un conteneur Certbot éphémère dédié à cette demande.
+Lorsqu'un nouveau certificat doit être généré, **NGX Ops** démarre un conteneur Certbot éphémère dédié à cette demande.
 
 Le certificat généré est ensuite conservé dans le répertoire partagé :
 
@@ -58,7 +58,7 @@ nano ./config/certbot/cloudflare/credentials.ini
 
 2 - Dans le fichier rempalcer `YOUR-API-TOKEN` par votre clé d'API et enregistrer les modifications.
 
-3 - Sur ***Nginx Control*** aller ADMINISTRATION / Configuration puis sur l'onglet Certbot - défi DNS et adapter la configuration si dessous et cliquer sur Sauvagrder.
+3 - Sur ***NGX Ops*** aller ADMINISTRATION / Configuration puis sur l'onglet Certbot - défi DNS et adapter la configuration si dessous et cliquer sur Sauvagrder.
 
 ```yaml
 enable: true
@@ -88,6 +88,6 @@ Cliquez ensuite sur **Générer**.
 
 Patientez quelques secondes pendant que Certbot effectue le challenge DNS et procède à l'émission du certificat.
 
-Une fois l'opération terminée, le certificat est disponible dans **Nginx Control** et peut être utilisé dans vos hôtes virtuels.
+Une fois l'opération terminée, le certificat est disponible dans **NGX Ops** et peut être utilisé dans vos hôtes virtuels.
 
 <img src="https://static.rdr-it.com/docs/nginx-dashboard/nginxdash-016-ssl-cerbot-dns.png" width="800" />

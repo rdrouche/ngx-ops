@@ -16,7 +16,7 @@ Pour utiliser cette fonctionnalité, les composants suivants doivent être confi
 * [**Nginx Analyzer Agent - NAA**](../nginx-analyzer.md)
 * [**GeoIP**](../geoip.md)
 
-NAA analyse les requêtes et transmet les informations nécessaires à Nginx Control, tandis que GeoIP permet de déterminer leur localisation géographique.
+NAA analyse les requêtes et transmet les informations nécessaires à NGX Ops, tandis que GeoIP permet de déterminer leur localisation géographique.
 
 ## Utilisation
 

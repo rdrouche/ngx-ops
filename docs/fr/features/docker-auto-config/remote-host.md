@@ -2,19 +2,19 @@
 
 L'auto-configuration Docker peut également être utilisée avec des conteneurs présents sur des **hôtes distants**.
 
-Dans ce cas, **Nginx Control** ne peut pas accéder directement au socket Docker de l'hôte distant. Un agent léger, développé en Go, est donc installé sur chaque hôte Docker afin de communiquer avec **Nginx Control** et de lui transmettre les informations sur les conteneurs à publier.
+Dans ce cas, **NGX Ops** ne peut pas accéder directement au socket Docker de l'hôte distant. Un agent léger, développé en Go, est donc installé sur chaque hôte Docker afin de communiquer avec **NGX Ops** et de lui transmettre les informations sur les conteneurs à publier.
 
 Cette configuration permet également de choisir la manière dont Nginx doit communiquer avec les applications distantes.
 
 Trois modes de communication sont disponibles :
 
 * **direct** : mode utilisé par défaut. Nginx se connecte directement à la cible définie dans le label `target`. L'hôte Nginx doit donc pouvoir joindre directement l'hôte distant sur le port utilisé ;
-* **tunnel** : l'agent ouvre une connexion WebSocket sortante vers **Nginx Control**. Aucune connexion entrante n'est nécessaire sur l'hôte distant, ce qui permet notamment de publier des conteneurs situés derrière un NAT ;
+* **tunnel** : l'agent ouvre une connexion WebSocket sortante vers **NGX Ops**. Aucune connexion entrante n'est nécessaire sur l'hôte distant, ce qui permet notamment de publier des conteneurs situés derrière un NAT ;
 * **relay** : l'agent expose un ou deux ports fixes permettant à Nginx de joindre les différents VHosts publiés. Le routage est ensuite effectué par `server_name`. Ce mode constitue un compromis entre le mode **direct** et le mode **tunnel**.
 
 Pour le mode **relay**, le label `relay_scheme` permet d'indiquer si le VHost doit utiliser le relais HTTP ou HTTPS.
 
-## Activer la fonctionnalité dans Nginx Control
+## Activer la fonctionnalité dans NGX Ops
 
 Rendez-vous dans **ADMINISTRATION → Configuration**, puis sélectionnez l'onglet **Hôtes Docker distants (agent)**.
 
@@ -28,7 +28,7 @@ tunnel_enable: false
 certbot_retry_minutes: 15
 ```
 
-Actualisez ensuite l'interface **Nginx Control** avec la touche **F5**.
+Actualisez ensuite l'interface **NGX Ops** avec la touche **F5**.
 
 Le menu **INTEGRATIONS → Hôtes distants** est alors disponible.
 
@@ -41,7 +41,7 @@ Créez ensuite le fichier `compose.yml` :
 ```yaml
 services:
   nginx-control-agent:
-    image: forge.rdr-it.com/dockerfiles/nginx-reverse-proxy-dashboard-agent:nightly
+    image: forge.rdr-it.com/ngx-ops/ngx-ops/ngx-ops-agent:nightly
     container_name: nginx-control-agent
     restart: ${AGENT_RESTART_POLICY:-always}
 
@@ -118,11 +118,11 @@ Démarrez une première fois l'agent :
 docker compose up -d
 ```
 
-L'agent apparaît alors dans **Nginx Control** et doit être approuvé.
+L'agent apparaît alors dans **NGX Ops** et doit être approuvé.
 
 <img src="https://static.rdr-it.com/docs/nginx-dashboard/nginxdash-044-remote.png" width="800" />
 
-Une fois l'agent approuvé, **Nginx Control** affiche un token permettant d'authentifier l'agent.
+Une fois l'agent approuvé, **NGX Ops** affiche un token permettant d'authentifier l'agent.
 
 > Le token n'est affiché qu'une seule fois. Conservez-le avant de poursuivre la configuration.
 
@@ -134,7 +134,7 @@ Sur l'hôte distant, arrêtez ensuite l'agent :
 docker compose down
 ```
 
-Dans le dossier `./data/`, créez le fichier `token` et ajoutez-y le token fourni par **Nginx Control**.
+Dans le dossier `./data/`, créez le fichier `token` et ajoutez-y le token fourni par **NGX Ops**.
 
 Redémarrez ensuite l'agent :
 
@@ -142,7 +142,7 @@ Redémarrez ensuite l'agent :
 docker compose up -d
 ```
 
-L'agent est maintenant enregistré et apparaît **En ligne** dans **Nginx Control**.
+L'agent est maintenant enregistré et apparaît **En ligne** dans **NGX Ops**.
 
 <img src="https://static.rdr-it.com/docs/nginx-dashboard/nginxdash-046-remote.png" width="800" />
 
@@ -211,3 +211,5 @@ La configuration Nginx générée peut également être consultée depuis cette 
 <img src="https://static.rdr-it.com/docs/nginx-dashboard/nginxdash-048-remote.png" width="800" />
 
 Les VHosts sont ainsi générés automatiquement à partir des labels Docker présents sur les conteneurs de l'hôte distant.
+
+Pour le détail des modes, du relais et des options de l'agent, voir [Agents distants : modes et options](agent-modes.md).

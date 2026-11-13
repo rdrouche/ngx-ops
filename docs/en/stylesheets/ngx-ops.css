@@ -1,0 +1,475 @@
+/* =====================================================================
+   NGX Ops — thème Material for MkDocs aligné sur la landing ngx-ops.net
+   Source des couleurs : assets/css/main.css du site Hugo (:root)
+   Mode sombre = scheme "slate" (par défaut), mode clair = scheme "default"
+   ===================================================================== */
+
+/* ---------- Jetons de marque (identiques à la landing) ---------- */
+:root {
+  --ngx-radius: 14px;
+  --ngx-radius-sm: 10px;
+
+  /* Même pile de polices que la landing (aucune police externe chargée) */
+  --md-text-font-family: "Inter", "Segoe UI Variable", "Segoe UI", system-ui,
+    -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --md-code-font-family: "JetBrains Mono", "Cascadia Code", "SF Mono",
+    ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* ---------- Mode sombre : copie conforme de la landing ---------- */
+[data-md-color-scheme="slate"] {
+  --ngx-bg: #0a0f1c;
+  --ngx-bg-2: #0d1424;
+  --ngx-surface: #111a2e;
+  --ngx-surface-2: #16203a;
+  --ngx-line: #1c2741;
+  --ngx-line-strong: #24304a;
+  --ngx-text: #e7ecf6;
+  --ngx-muted: #8d99b3;
+  --ngx-dim: #5d6987;
+  --ngx-accent: #4ade9a;
+  --ngx-accent-ink: #052414;
+  --ngx-accent-2: #38bdf8;
+  --ngx-warn: #fbbf24;
+  --ngx-header-bg: rgba(10, 15, 28, 0.72);
+
+  --md-hue: 222;
+  --md-default-bg-color: var(--ngx-bg);
+  --md-default-bg-color--light: rgba(10, 15, 28, 0.54);
+  --md-default-bg-color--lighter: rgba(10, 15, 28, 0.26);
+  --md-default-bg-color--lightest: rgba(10, 15, 28, 0.07);
+  --md-default-fg-color: var(--ngx-text);
+  --md-default-fg-color--light: var(--ngx-muted);
+  --md-default-fg-color--lighter: var(--ngx-dim);
+  --md-default-fg-color--lightest: var(--ngx-line-strong);
+
+  --md-primary-fg-color: var(--ngx-bg);
+  --md-primary-fg-color--light: var(--ngx-bg-2);
+  --md-primary-fg-color--dark: var(--ngx-bg);
+  --md-primary-bg-color: var(--ngx-text);
+  --md-primary-bg-color--light: var(--ngx-muted);
+
+  --md-accent-fg-color: var(--ngx-accent);
+  --md-accent-fg-color--transparent: rgba(74, 222, 154, 0.1);
+  --md-accent-bg-color: var(--ngx-accent-ink);
+  --md-accent-bg-color--light: rgba(5, 36, 20, 0.7);
+
+  --md-typeset-color: var(--ngx-text);
+  --md-typeset-a-color: var(--ngx-accent);
+  --md-typeset-mark-color: rgba(251, 191, 36, 0.25);
+  --md-typeset-kbd-color: var(--ngx-surface-2);
+  --md-typeset-kbd-accent-color: var(--ngx-line-strong);
+  --md-typeset-kbd-border-color: var(--ngx-bg);
+  --md-typeset-table-color: var(--ngx-line);
+  --md-typeset-table-color--light: rgba(22, 32, 58, 0.5);
+
+  --md-code-fg-color: var(--ngx-text);
+  --md-code-bg-color: var(--ngx-bg-2);
+  --md-code-hl-color: rgba(56, 189, 248, 0.15);
+  --md-code-hl-color--light: rgba(56, 189, 248, 0.08);
+  --md-code-hl-number-color: #fbbf24;
+  --md-code-hl-special-color: #f9a8d4;
+  --md-code-hl-function-color: #93c5fd;
+  --md-code-hl-constant-color: #fbbf24;
+  --md-code-hl-keyword-color: #38bdf8;
+  --md-code-hl-string-color: #4ade9a;
+  --md-code-hl-name-color: var(--ngx-text);
+  --md-code-hl-operator-color: var(--ngx-muted);
+  --md-code-hl-punctuation-color: var(--ngx-muted);
+  --md-code-hl-comment-color: var(--ngx-dim);
+  --md-code-hl-generic-color: var(--ngx-muted);
+  --md-code-hl-variable-color: #c4b5fd;
+
+  --md-admonition-fg-color: var(--ngx-text);
+  --md-admonition-bg-color: var(--ngx-surface);
+
+  --md-footer-fg-color: var(--ngx-text);
+  --md-footer-fg-color--light: var(--ngx-muted);
+  --md-footer-fg-color--lighter: var(--ngx-dim);
+  --md-footer-bg-color: var(--ngx-bg-2);
+  --md-footer-bg-color--dark: var(--ngx-bg);
+
+  --md-shadow-z1: 0 4px 10px rgba(0, 0, 0, 0.25);
+  --md-shadow-z2: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --md-shadow-z3: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- Mode clair : même identité, contrastes adaptés ---------- */
+[data-md-color-scheme="default"] {
+  --ngx-bg: #f7f9fc;
+  --ngx-bg-2: #eef2f8;
+  --ngx-surface: #ffffff;
+  --ngx-surface-2: #eef2f8;
+  --ngx-line: #dde3ee;
+  --ngx-line-strong: #c9d2e2;
+  --ngx-text: #0a0f1c;
+  --ngx-muted: #4b5670;
+  --ngx-dim: #7a849c;
+  --ngx-accent: #047857;
+  --ngx-accent-ink: #ffffff;
+  --ngx-accent-2: #0369a1;
+  --ngx-warn: #b45309;
+  --ngx-header-bg: rgba(10, 15, 28, 0.9); /* en-tête toujours sombre, comme la landing */
+
+  --md-default-bg-color: var(--ngx-bg);
+  --md-default-fg-color: var(--ngx-text);
+  --md-default-fg-color--light: var(--ngx-muted);
+  --md-default-fg-color--lighter: var(--ngx-dim);
+  --md-default-fg-color--lightest: var(--ngx-line);
+
+  --md-primary-fg-color: #0a0f1c;
+  --md-primary-fg-color--light: #0d1424;
+  --md-primary-fg-color--dark: #0a0f1c;
+  --md-primary-bg-color: #e7ecf6;
+  --md-primary-bg-color--light: #8d99b3;
+
+  --md-accent-fg-color: #059669;
+  --md-accent-fg-color--transparent: rgba(5, 150, 105, 0.1);
+  --md-accent-bg-color: #ffffff;
+  --md-accent-bg-color--light: rgba(255, 255, 255, 0.7);
+
+  --md-typeset-color: var(--ngx-text);
+  --md-typeset-a-color: var(--ngx-accent);
+  --md-typeset-table-color: var(--ngx-line);
+
+  --md-code-fg-color: #e7ecf6;     /* blocs de code sombres, comme le terminal de la landing */
+  --md-code-bg-color: #0d1424;
+  --md-code-hl-color: rgba(56, 189, 248, 0.15);
+  --md-code-hl-number-color: #fbbf24;
+  --md-code-hl-special-color: #f9a8d4;
+  --md-code-hl-function-color: #93c5fd;
+  --md-code-hl-constant-color: #fbbf24;
+  --md-code-hl-keyword-color: #38bdf8;
+  --md-code-hl-string-color: #4ade9a;
+  --md-code-hl-name-color: #e7ecf6;
+  --md-code-hl-operator-color: #8d99b3;
+  --md-code-hl-punctuation-color: #8d99b3;
+  --md-code-hl-comment-color: #7a849c;
+  --md-code-hl-generic-color: #8d99b3;
+  --md-code-hl-variable-color: #c4b5fd;
+
+  --md-admonition-fg-color: var(--ngx-text);
+  --md-admonition-bg-color: var(--ngx-surface);
+
+  --md-footer-fg-color: #e7ecf6;
+  --md-footer-fg-color--light: #8d99b3;
+  --md-footer-fg-color--lighter: #5d6987;
+  --md-footer-bg-color: #0d1424;
+  --md-footer-bg-color--dark: #0a0f1c;
+}
+
+/* =====================================================================
+   Composants
+   ===================================================================== */
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--ngx-accent) 35%, transparent);
+}
+
+/* ---------- En-tête translucide + flou (comme la landing) ---------- */
+.md-header {
+  background: var(--ngx-header-bg);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  backdrop-filter: saturate(160%) blur(14px);
+  border-bottom: 1px solid #1c2741;
+  box-shadow: none;
+}
+.md-header--shadow {
+  box-shadow: none;
+}
+.md-header__title {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.md-tabs {
+  background: var(--ngx-header-bg);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  backdrop-filter: saturate(160%) blur(14px);
+  border-bottom: 1px solid #1c2741;
+}
+.md-tabs__link {
+  font-weight: 500;
+  opacity: 0.75;
+}
+.md-tabs__link--active,
+.md-tabs__link:hover {
+  color: #4ade9a;
+  opacity: 1;
+}
+
+/* Bouton "Forge" (dépôt) façon bouton ghost */
+.md-header__source .md-source {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid #24304a;
+  border-radius: var(--ngx-radius-sm);
+  background: rgba(17, 26, 46, 0.7);
+  transition: border-color 0.2s;
+}
+.md-header__source .md-source:hover {
+  border-color: #4ade9a;
+}
+
+/* ---------- Recherche ---------- */
+.md-search__form {
+  border-radius: var(--ngx-radius-sm);
+  background: rgba(17, 26, 46, 0.7);
+  border: 1px solid #24304a;
+}
+.md-search__form:hover {
+  background: #111a2e;
+}
+.md-search__input {
+  color: #e7ecf6;
+}
+.md-search__input::placeholder {
+  color: #8d99b3;
+}
+.md-search__output {
+  border-radius: 0 0 var(--ngx-radius-sm) var(--ngx-radius-sm);
+}
+
+/* ---------- Navigation latérale ---------- */
+.md-nav__link--active,
+.md-nav__link:is(:focus, :hover) {
+  color: var(--ngx-accent);
+}
+.md-nav--primary .md-nav__item--active > .md-nav__link {
+  font-weight: 600;
+}
+/* Titres de section façon "eyebrow" (// FEATURES) — avec navigation.sections */
+.md-nav--primary .md-nav__item--section > .md-nav__link {
+  font-family: var(--md-code-font-family);
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ngx-accent);
+}
+.md-nav--primary .md-nav__item--section > .md-nav__link::before {
+  content: "// ";
+  color: var(--ngx-dim);
+}
+.md-nav__title {
+  color: var(--ngx-muted);
+}
+.md-sidebar--secondary .md-nav__link--active {
+  color: var(--ngx-accent-2);
+}
+
+/* ---------- Typographie du contenu ---------- */
+.md-typeset {
+  line-height: 1.7;
+}
+.md-typeset h1 {
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  background: linear-gradient(100deg, #4ade9a 10%, #38bdf8 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+[data-md-color-scheme="default"] .md-typeset h1 {
+  background-image: linear-gradient(100deg, #059669 10%, #0284c7 90%);
+}
+.md-typeset h2 {
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--ngx-line);
+}
+.md-typeset h3,
+.md-typeset h4 {
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+.md-typeset a {
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.md-typeset a:hover {
+  color: var(--ngx-accent-2);
+}
+.md-typeset strong {
+  color: var(--ngx-text);
+  font-weight: 650;
+}
+.md-typeset hr {
+  border-bottom-color: var(--ngx-line);
+}
+
+/* ---------- Code ---------- */
+/* Code en ligne : pastille comme sur la landing */
+.md-typeset :not(pre) > code {
+  padding: 0.1em 0.4em;
+  border-radius: 6px;
+  border: 1px solid var(--ngx-line-strong);
+  background: var(--ngx-surface-2);
+  color: var(--ngx-text);
+}
+.md-typeset a > code {
+  color: var(--ngx-accent);
+}
+
+/* Blocs de code : style "terminal" */
+.md-typeset pre {
+  border-radius: var(--ngx-radius);
+}
+.md-typeset pre > code {
+  border-radius: var(--ngx-radius);
+  border: 1px solid #1c2741;
+  background: #0d1424;
+  color: #e7ecf6;
+}
+.md-typeset .highlight .filename,
+.md-typeset .highlight span.filename {
+  border-radius: var(--ngx-radius) var(--ngx-radius) 0 0;
+  border: 1px solid #1c2741;
+  border-bottom: 0;
+  background: #111a2e;
+  color: #8d99b3;
+  font-family: var(--md-code-font-family);
+  font-size: 0.7rem;
+}
+.md-typeset .highlight .filename + pre > code {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.md-clipboard {
+  color: #5d6987;
+}
+.md-clipboard:is(:focus, :hover) {
+  color: #4ade9a;
+}
+
+/* ---------- Admonitions / details : cartes ---------- */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: var(--ngx-radius-sm);
+  border-width: 1px;
+  border-left-width: 4px;
+  background: var(--ngx-surface);
+  box-shadow: none;
+  font-size: 0.72rem;
+}
+.md-typeset .admonition-title,
+.md-typeset summary {
+  font-weight: 600;
+}
+
+/* ---------- Tableaux ---------- */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--ngx-line);
+  border-radius: var(--ngx-radius-sm);
+  overflow: hidden;
+  font-size: 0.72rem;
+}
+.md-typeset table:not([class]) th {
+  background: var(--ngx-surface);
+  color: var(--ngx-text);
+  font-weight: 600;
+}
+.md-typeset table:not([class]) td {
+  border-top: 1px solid var(--ngx-line);
+}
+.md-typeset table:not([class]) tr:hover {
+  background: var(--md-accent-fg-color--transparent);
+}
+
+/* ---------- Onglets de contenu ---------- */
+.md-typeset .tabbed-labels > label {
+  font-weight: 600;
+  color: var(--ngx-muted);
+}
+.md-typeset .tabbed-labels > label:hover {
+  color: var(--ngx-accent);
+}
+
+/* ---------- Boutons : .md-button / .md-button--primary ---------- */
+.md-typeset .md-button {
+  padding: 0.55em 1.2em;
+  border: 1px solid var(--ngx-line-strong);
+  border-radius: var(--ngx-radius-sm);
+  background: color-mix(in srgb, var(--ngx-surface) 70%, transparent);
+  color: var(--ngx-text);
+  font-weight: 600;
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+.md-typeset .md-button:is(:focus, :hover) {
+  border-color: var(--ngx-accent);
+  background: var(--ngx-surface);
+  color: var(--ngx-text);
+}
+.md-typeset .md-button--primary {
+  border-color: transparent;
+  background: #4ade9a;
+  color: #052414;
+  box-shadow: 0 8px 30px -10px rgba(74, 222, 154, 0.7);
+}
+.md-typeset .md-button--primary:is(:focus, :hover) {
+  border-color: transparent;
+  background: #4ade9a;
+  color: #052414;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 34px -8px rgba(74, 222, 154, 0.8);
+}
+
+/* ---------- Grilles de cartes (attr_list + md_in_html : <div class="grid cards">) ---------- */
+.md-typeset .grid.cards > :is(ul, ol) > li,
+.md-typeset .grid > .card {
+  border: 1px solid var(--ngx-line);
+  border-radius: var(--ngx-radius);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ngx-surface) 80%, transparent),
+    transparent
+  );
+  transition: border-color 0.25s, transform 0.25s, background 0.25s;
+}
+.md-typeset .grid.cards > :is(ul, ol) > li:hover,
+.md-typeset .grid > .card:hover {
+  border-color: var(--ngx-line-strong);
+  background: var(--ngx-surface);
+  transform: translateY(-2px);
+  box-shadow: none;
+}
+
+/* ---------- Pied de page ---------- */
+.md-footer {
+  border-top: 1px solid #1c2741;
+}
+.md-footer-meta {
+  border-top: 1px solid #1c2741;
+}
+.md-footer__link:hover {
+  color: #4ade9a;
+}
+.md-copyright a {
+  color: #8d99b3;
+}
+
+/* ---------- Divers ---------- */
+.md-typeset .headerlink:is(:focus, :hover),
+.md-typeset :target > .headerlink {
+  color: var(--ngx-accent);
+}
+.md-top {
+  border: 1px solid var(--ngx-line-strong);
+  background: var(--ngx-surface);
+  color: var(--ngx-text);
+}
+.md-top:hover {
+  border-color: var(--ngx-accent);
+  background: var(--ngx-surface);
+  color: var(--ngx-accent);
+}
+
+/* Barres de défilement discrètes */
+[data-md-color-scheme="slate"] .md-sidebar__scrollwrap,
+[data-md-color-scheme="slate"] .md-search__scrollwrap {
+  scrollbar-color: #24304a transparent;
+}

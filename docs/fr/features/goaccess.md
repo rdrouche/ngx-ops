@@ -2,9 +2,9 @@
 
 [GoAccess](https://goaccess.io/) est un analyseur de journaux Web open source permettant de générer des statistiques détaillées à partir des fichiers `access_log` de Nginx.
 
-Nginx Control permet d'intégrer **GoAccess directement dans son interface** afin de disposer, pour un ou plusieurs hôtes virtuels, d'une interface de statistiques sur les visites sans avoir à déployer et configurer manuellement un conteneur GoAccess.
+NGX Ops permet d'intégrer **GoAccess directement dans son interface** afin de disposer, pour un ou plusieurs hôtes virtuels, d'une interface de statistiques sur les visites sans avoir à déployer et configurer manuellement un conteneur GoAccess.
 
-L'objectif de cette intégration est de permettre aux personnes qui le souhaitent d'obtenir directement dans Nginx Control des statistiques telles que :
+L'objectif de cette intégration est de permettre aux personnes qui le souhaitent d'obtenir directement dans NGX Ops des statistiques telles que :
 
 * le nombre de visiteurs et de requêtes ;
 * les pages les plus consultées ;
@@ -23,7 +23,7 @@ GoAccess fonctionne directement à partir des fichiers **`access_log`** de Nginx
 
 ## Démarrer un conteneur GoAccess
 
-Pour démarrer GoAccess depuis Nginx Control, aller dans :
+Pour démarrer GoAccess depuis NGX Ops, aller dans :
 
 **INTEGRATION → GoAccess**
 
@@ -62,6 +62,6 @@ L'interface permet ensuite de consulter les différentes statistiques du VHost e
 
 > **À noter :** sur les VHost à fort trafic, après plusieurs semaines d'utilisation, le conteneur GoAccess peut devenir assez gourmand en ressources et consommer plusieurs centaines de mégaoctets de RAM.
 >
-> Pour disposer de statistiques sur une période plus longue tout en limitant la consommation de ressources, je réfléchis actuellement à l'intégration d'**AWStats** dans Nginx Control.
+> Pour disposer de statistiques sur une période plus longue tout en limitant la consommation de ressources, je réfléchis actuellement à l'intégration d'**AWStats** dans NGX Ops.
 >
 > L'objectif serait notamment de proposer une solution mieux adaptée aux sites générant un volume important de journaux et nécessitant un historique statistique sur le long terme.

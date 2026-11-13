@@ -1,6 +1,6 @@
 # Supervision des backends — cibles des proxy_pass
 
-Avec **Nginx Control**, vous pouvez superviser les backends utilisés par les directives `proxy_pass` de vos VHosts.
+Avec **NGX Ops**, vous pouvez superviser les backends utilisés par les directives `proxy_pass` de vos VHosts.
 
 Par défaut, la supervision est désactivée. Son activation et sa configuration se font directement dans les fichiers de configuration des VHosts à l'aide de commentaires spécifiques.
 
@@ -31,7 +31,7 @@ server {
 }
 ```
 
-Une fois la configuration rechargée, les cibles des `proxy_pass` sont supervisées par **Nginx Control**.
+Une fois la configuration rechargée, les cibles des `proxy_pass` sont supervisées par **NGX Ops**.
 
 Le suivi de l'état des backends est disponible depuis **CONFIGURATION → Monitoring**.
 
